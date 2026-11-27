@@ -1,0 +1,72 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Explicit version (e.g. 1.0.0).'
+        required: false
+        type: string
+        default: ''
+      dry_run:
+        description: 'Dry run.'
+        required: false
+        type: boolean
+        default: false
+      prerelease:
+        description: 'Mark pre-release.'
+        required: false
+        type: boolean
+        default: false
+      tag:
+        description: 'Use existing tag.'
+        required: false
+        type: string
+        default: ''
+
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  prepare:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.tag == '' }}
+    uses: project-apricot/shared-workflows/.github/workflows/release-prepare.yml@v1
+    permissions:
+      contents: write
+    with:
+      version: ${{ inputs.version }}
+      dry_run: ${{ inputs.dry_run }}
+      prerelease: ${{ inputs.prerelease }}
+
+  publish:
+    needs: [prepare]
+    if: >-
+      ${{ always()
+          && (needs.prepare.result == 'success' || needs.prepare.result == 'skipped')
+          && !(github.event_name == 'workflow_dispatch' && inputs.dry_run) }}
+    uses: project-apricot/shared-workflows/.github/workflows/helm-chart-publish.yml@v1
+    permissions:
+      contents: read
+      packages: write
+    with:
+      tag: ${{ github.event.release.tag_name || inputs.tag || needs.prepare.outputs.tag }}
+      helm_version: 'v3.19.0'
+
+  # Needs prepare as well as publish: it reads prepare's tag on the dispatch path. always() because
+  # prepare is skipped when a Release triggered the run, and a skipped need would skip this job.
+  docs:
+    needs: [prepare, publish]
+    if: ${{ always() && needs.publish.result == 'success' }}
+    uses: project-apricot/shared-workflows/.github/workflows/docs-release.yml@v1
+    permissions:
+      contents: read
+    with:
+      ref: ${{ github.event.release.tag_name || inputs.tag || needs.prepare.outputs.tag }}
+      version: ${{ github.event.release.tag_name || inputs.tag || needs.prepare.outputs.tag }}
+    secrets:
+      docs_app_client_id: ${{ secrets.DOCS_APP_CLIENT_ID }}
+      docs_app_private_key: ${{ secrets.DOCS_APP_PRIVATE_KEY }}

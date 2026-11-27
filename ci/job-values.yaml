@@ -1,0 +1,31 @@
+# A one-shot Job with a command override and annotations.
+image:
+  repository: busybox
+  tag: "1.37"
+
+deployment:
+  enabled: false
+
+service:
+  enabled: false
+
+job:
+  enabled: true
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 600
+  restartPolicy: Never
+  annotations:
+    example.test/purpose: migration
+
+command: ["sh", "-c", "echo done"]
+
+podSecurityContext:
+  runAsUser: 65534
+  runAsGroup: 65534
+
+configMaps:
+  app:
+    enabled: true
+    asEnv: true
+    data:
+      TARGET: example

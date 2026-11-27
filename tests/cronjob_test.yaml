@@ -1,0 +1,148 @@
+suite: cronjob
+templates:
+  - cronjob.yaml
+release:
+  name: example
+set:
+  deployment.enabled: false
+  cronjob.enabled: true
+  cronjob.schedule: "0 2 * * *"
+tests:
+  - it: renders a CronJob with the defaults
+    asserts:
+      - isKind:
+          of: CronJob
+      - equal:
+          path: spec.schedule
+          value: "0 2 * * *"
+      - equal:
+          path: spec.concurrencyPolicy
+          value: Forbid
+      - equal:
+          path: spec.suspend
+          value: false
+      - equal:
+          path: spec.startingDeadlineSeconds
+          value: 300
+      - equal:
+          path: spec.successfulJobsHistoryLimit
+          value: 3
+      - equal:
+          path: spec.failedJobsHistoryLimit
+          value: 1
+      - equal:
+          path: spec.jobTemplate.spec.backoffLimit
+          value: 3
+      - equal:
+          path: spec.jobTemplate.spec.template.spec.restartPolicy
+          value: OnFailure
+      - notExists:
+          path: spec.timeZone
+      - notExists:
+          path: spec.jobTemplate.spec.activeDeadlineSeconds
+      - notExists:
+          path: spec.jobTemplate.spec.ttlSecondsAfterFinished
+
+  - it: labels the Jobs it spawns like every other object
+    release:
+      name: example
+    asserts:
+      - equal:
+          path: spec.jobTemplate.metadata.labels
+          value:
+            helm.sh/chart: workload-0.0.0
+            app.kubernetes.io/name: example
+            app.kubernetes.io/instance: example
+            app.kubernetes.io/managed-by: Helm
+
+  - it: renders nothing when disabled
+    set:
+      cronjob.enabled: false
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: honours zero values
+    set:
+      cronjob.startingDeadlineSeconds: 0
+      cronjob.successfulJobsHistoryLimit: 0
+      cronjob.failedJobsHistoryLimit: 0
+      cronjob.backoffLimit: 0
+      cronjob.ttlSecondsAfterFinished: 0
+    asserts:
+      - equal:
+          path: spec.startingDeadlineSeconds
+          value: 0
+      - equal:
+          path: spec.successfulJobsHistoryLimit
+          value: 0
+      - equal:
+          path: spec.failedJobsHistoryLimit
+          value: 0
+      - equal:
+          path: spec.jobTemplate.spec.backoffLimit
+          value: 0
+      - equal:
+          path: spec.jobTemplate.spec.ttlSecondsAfterFinished
+          value: 0
+
+  - it: renders the optional fields
+    set:
+      cronjob.timeZone: UTC
+      cronjob.suspend: true
+      cronjob.concurrencyPolicy: Replace
+      cronjob.activeDeadlineSeconds: 1800
+      cronjob.ttlSecondsAfterFinished: 86400
+      cronjob.restartPolicy: Never
+    asserts:
+      - equal:
+          path: spec.timeZone
+          value: UTC
+      - equal:
+          path: spec.suspend
+          value: true
+      - equal:
+          path: spec.concurrencyPolicy
+          value: Replace
+      - equal:
+          path: spec.jobTemplate.spec.activeDeadlineSeconds
+          value: 1800
+      - equal:
+          path: spec.jobTemplate.spec.ttlSecondsAfterFinished
+          value: 86400
+      - equal:
+          path: spec.jobTemplate.spec.template.spec.restartPolicy
+          value: Never
+
+  - it: drops empty optional fields
+    set:
+      cronjob.activeDeadlineSeconds: ""
+      cronjob.ttlSecondsAfterFinished: ""
+    asserts:
+      - notExists:
+          path: spec.jobTemplate.spec.activeDeadlineSeconds
+      - notExists:
+          path: spec.jobTemplate.spec.ttlSecondsAfterFinished
+
+  - it: renders no ports or probes
+    set:
+      ports:
+        - name: http
+          containerPort: 8080
+    asserts:
+      - notExists:
+          path: spec.jobTemplate.spec.template.spec.containers[0].ports
+
+  - it: puts annotations on the CronJob, not on the pods
+    set:
+      cronjob.annotations:
+        example.test/x: value
+      provenance.git.revision: abc123
+    asserts:
+      - equal:
+          path: metadata.annotations
+          value:
+            example.test/x: value
+            org.opencontainers.image.revision: abc123
+      - notExists:
+          path: spec.jobTemplate.spec.template.metadata.annotations

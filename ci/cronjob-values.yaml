@@ -1,0 +1,31 @@
+# A recurring CronJob with a persistent volume for its output.
+image:
+  repository: busybox
+  tag: "1.37"
+
+deployment:
+  enabled: false
+
+service:
+  enabled: false
+
+cronjob:
+  enabled: true
+  schedule: "0 2 * * *"
+  timeZone: "UTC"
+  concurrencyPolicy: Forbid
+  activeDeadlineSeconds: 1800
+  ttlSecondsAfterFinished: 86400
+
+command: ["sh", "-c", "date > /out/last-run"]
+
+podSecurityContext:
+  runAsUser: 65534
+  runAsGroup: 65534
+  fsGroup: 65534
+
+persistentVolumeClaims:
+  output:
+    mountPath: /out
+    accessModes: [ReadWriteOnce]
+    storage: 64Mi

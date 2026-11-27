@@ -1,0 +1,40 @@
+{{- if .Values.autoscaling.enabled }}
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "workload.fullname" . }}
+  labels:
+    {{- include "workload.labels" . | nindent 4 }}
+  {{- with include "workload.annotations" (dict "ctx" .) }}
+  annotations:
+    {{- . | nindent 4 }}
+  {{- end }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: {{ include "workload.workloadKind" . }}
+    name: {{ include "workload.fullname" . }}
+  minReplicas: {{ .Values.autoscaling.minReplicas | int64 }}
+  maxReplicas: {{ .Values.autoscaling.maxReplicas | int64 }}
+  metrics:
+    {{- if include "workload.isSet" .Values.autoscaling.targetCPUUtilizationPercentage }}
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.autoscaling.targetCPUUtilizationPercentage | int64 }}
+    {{- end }}
+    {{- if include "workload.isSet" .Values.autoscaling.targetMemoryUtilizationPercentage }}
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.autoscaling.targetMemoryUtilizationPercentage | int64 }}
+    {{- end }}
+  {{- with .Values.autoscaling.behavior }}
+  behavior:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+{{- end }}

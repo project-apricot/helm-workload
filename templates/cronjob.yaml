@@ -1,0 +1,40 @@
+{{- if .Values.cronjob.enabled }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "workload.fullname" . }}
+  labels:
+    {{- include "workload.labels" . | nindent 4 }}
+  {{- with include "workload.annotations" (dict "ctx" . "extra" .Values.cronjob.annotations "provenance" true) }}
+  annotations:
+    {{- . | nindent 4 }}
+  {{- end }}
+spec:
+  schedule: {{ .Values.cronjob.schedule | quote }}
+  {{- with .Values.cronjob.timeZone }}
+  timeZone: {{ . | quote }}
+  {{- end }}
+  concurrencyPolicy: {{ .Values.cronjob.concurrencyPolicy | default "Forbid" }}
+  suspend: {{ .Values.cronjob.suspend | default false }}
+  {{- if include "workload.isSet" .Values.cronjob.startingDeadlineSeconds }}
+  startingDeadlineSeconds: {{ .Values.cronjob.startingDeadlineSeconds | int64 }}
+  {{- end }}
+  successfulJobsHistoryLimit: {{ if include "workload.isSet" .Values.cronjob.successfulJobsHistoryLimit }}{{ .Values.cronjob.successfulJobsHistoryLimit | int64 }}{{ else }}3{{ end }}
+  failedJobsHistoryLimit: {{ if include "workload.isSet" .Values.cronjob.failedJobsHistoryLimit }}{{ .Values.cronjob.failedJobsHistoryLimit | int64 }}{{ else }}1{{ end }}
+  jobTemplate:
+    metadata:
+      labels:
+        {{- include "workload.labels" . | nindent 8 }}
+    spec:
+      {{- if include "workload.isSet" .Values.cronjob.backoffLimit }}
+      backoffLimit: {{ .Values.cronjob.backoffLimit | int64 }}
+      {{- end }}
+      {{- if include "workload.isSet" .Values.cronjob.activeDeadlineSeconds }}
+      activeDeadlineSeconds: {{ .Values.cronjob.activeDeadlineSeconds | int64 }}
+      {{- end }}
+      {{- if include "workload.isSet" .Values.cronjob.ttlSecondsAfterFinished }}
+      ttlSecondsAfterFinished: {{ .Values.cronjob.ttlSecondsAfterFinished | int64 }}
+      {{- end }}
+      template:
+        {{- include "workload.podTemplate" (dict "ctx" . "restartPolicy" (.Values.cronjob.restartPolicy | default "OnFailure")) | nindent 8 }}
+{{- end }}

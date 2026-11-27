@@ -1,0 +1,24 @@
+name: Preview
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Package the chart without pushing it.'
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  preview:
+    uses: project-apricot/shared-workflows/.github/workflows/helm-chart-preview.yml@v1
+    permissions:
+      contents: read
+      packages: write
+    with:
+      helm_version: 'v3.19.0'
+      dry_run: ${{ inputs.dry_run }}

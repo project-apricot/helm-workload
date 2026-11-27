@@ -1,0 +1,55 @@
+{{- if .Values.statefulset.enabled }}
+{{- $fullname := include "workload.fullname" . }}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ $fullname }}
+  labels:
+    {{- include "workload.labels" . | nindent 4 }}
+  {{- with include "workload.annotations" (dict "ctx" . "extra" .Values.statefulset.annotations "provenance" true) }}
+  annotations:
+    {{- . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- $defaultServiceName := ternary (include "workload.headlessName" .) $fullname (.Values.statefulset.headlessService.enabled | default false) }}
+  serviceName: {{ .Values.statefulset.serviceName | default $defaultServiceName }}
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ if include "workload.isSet" .Values.replicaCount }}{{ .Values.replicaCount | int64 }}{{ else }}1{{ end }}
+  {{- end }}
+  {{- with .Values.statefulset.podManagementPolicy }}
+  podManagementPolicy: {{ . }}
+  {{- end }}
+  {{- with .Values.statefulset.updateStrategy }}
+  updateStrategy:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- with .Values.statefulset.persistentVolumeClaimRetentionPolicy }}
+  persistentVolumeClaimRetentionPolicy:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "workload.selectorLabels" . | nindent 6 }}
+  template:
+    {{- include "workload.podTemplate" (dict "ctx" . "probes" true "vcts" true) | nindent 4 }}
+  {{- with .Values.statefulset.volumeClaimTemplates }}
+  volumeClaimTemplates:
+    {{- range $name, $vct := . }}
+    - metadata:
+        name: {{ $name }}
+        {{- /* volumeClaimTemplates are immutable on a live StatefulSet: no chart version, no commonLabels. */}}
+        labels:
+          {{- include "workload.selectorLabels" $ | nindent 10 }}
+      spec:
+        accessModes:
+          {{- toYaml ($vct.accessModes | default (list "ReadWriteOnce")) | nindent 10 }}
+        {{- $sc := coalesce $vct.storageClassName $.Values.cluster.localStorageClassName }}
+        {{- if $sc }}
+        storageClassName: {{ $sc }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ required (printf "statefulset.volumeClaimTemplates.%s.storage is required" $name) $vct.storage }}
+    {{- end }}
+  {{- end }}
+{{- end }}

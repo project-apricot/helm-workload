@@ -1,0 +1,73 @@
+# A stateless service: Deployment + Service + Ingress, a ConfigMap wired into the environment and
+# mounted as files, probes, resources, and a writable /tmp.
+image:
+  repository: nginxinc/nginx-unprivileged
+  tag: "1.27-alpine"
+
+replicaCount: 2
+
+urls:
+  api: https://api.example.test
+
+ports:
+  - name: http
+    containerPort: 8080
+
+service:
+  enabled: true
+  ports: [http]
+
+ingress:
+  enabled: true
+  host: '{{ (urlParse (index .Values.urls "api")).host }}'
+  annotations:
+    example.test/some-annotation: "true"
+
+resources:
+  requests:
+    cpu: 10m
+    memory: 16Mi
+  limits:
+    memory: 64Mi
+
+readinessProbe:
+  httpGet:
+    path: /
+    port: http
+  initialDelaySeconds: 1
+  periodSeconds: 2
+
+podSecurityContext:
+  runAsUser: 101
+  runAsGroup: 101
+
+containerSecurityContext:
+  readOnlyRootFilesystem: true
+
+extraVolumes:
+  - name: tmp
+    emptyDir:
+      sizeLimit: 16Mi
+  - name: cache
+    emptyDir:
+      sizeLimit: 16Mi
+
+extraVolumeMounts:
+  - name: tmp
+    mountPath: /tmp
+  - name: cache
+    mountPath: /var/cache/nginx
+
+configMaps:
+  app:
+    enabled: true
+    asEnv: true
+    data:
+      LOG_LEVEL: info
+      API_URL: '{{ index .Values.urls "api" }}'
+  settings:
+    enabled: true
+    mountPath: /etc/example
+    data:
+      "settings.json": |
+        {"verbose": true}

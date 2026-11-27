@@ -1,0 +1,263 @@
+suite: validation
+templates:
+  - validate.yaml
+release:
+  name: example
+tests:
+  - it: accepts the defaults
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: accepts no workload kind at all
+    set:
+      deployment.enabled: false
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: rejects two workload kinds
+    set:
+      statefulset.enabled: true
+    asserts:
+      - failedTemplate:
+          errorMessage: "deployment, statefulset, job and cronjob are mutually exclusive, but deployment, statefulset are all enabled. Choose one workload kind per release."
+
+  - it: rejects every pair of workload kinds
+    set:
+      deployment.enabled: false
+      job.enabled: true
+      cronjob.enabled: true
+      cronjob.schedule: "* * * * *"
+    asserts:
+      - failedTemplate:
+          errorPattern: "mutually exclusive, but job, cronjob are all enabled"
+
+  - it: rejects a cronjob without a schedule
+    set:
+      deployment.enabled: false
+      cronjob.enabled: true
+    asserts:
+      - failedTemplate:
+          errorMessage: "cronjob.schedule is required when cronjob.enabled is true"
+
+  - it: rejects a service port that is not declared
+    set:
+      ports:
+        - name: http
+          containerPort: 8080
+      service.ports: [grpc]
+    asserts:
+      - failedTemplate:
+          errorPattern: 'service.ports lists "grpc"'
+
+  - it: rejects an ingress without a service
+    set:
+      ingress.enabled: true
+      service.enabled: false
+    asserts:
+      - failedTemplate:
+          errorMessage: "ingress.enabled requires service.enabled"
+
+  - it: rejects an ingress port that is not declared
+    set:
+      ports:
+        - name: grpc
+          containerPort: 9090
+      ingress.enabled: true
+    asserts:
+      - failedTemplate:
+          errorPattern: 'ingress.port "http" is not a name in ports \(known: grpc\)'
+
+  - it: rejects an ingress when no ports are declared
+    set:
+      ingress.enabled: true
+    asserts:
+      - failedTemplate:
+          errorMessage: "ingress.enabled requires at least one entry in ports"
+
+  - it: rejects an ingress port that the service does not expose
+    set:
+      ports:
+        - name: http
+          containerPort: 8080
+        - name: grpc
+          containerPort: 9090
+      service.ports: [grpc]
+      ingress.enabled: true
+    asserts:
+      - failedTemplate:
+          errorPattern: 'ingress.port "http" is not exposed by the Service \(exposed: grpc\)'
+
+  - it: rejects autoscaling bounds that are the wrong way round
+    set:
+      autoscaling.enabled: true
+      autoscaling.minReplicas: 5
+      autoscaling.maxReplicas: 2
+    asserts:
+      - failedTemplate:
+          errorMessage: "autoscaling.minReplicas (5) must not exceed autoscaling.maxReplicas (2)"
+
+  - it: rejects egress rules that the policy types would silently ignore
+    set:
+      networkPolicy.enabled: true
+      networkPolicy.policyTypes: [Ingress]
+      networkPolicy.egress:
+        - to:
+            - namespaceSelector: {}
+    asserts:
+      - failedTemplate:
+          errorMessage: "networkPolicy.egress has rules but networkPolicy.policyTypes does not include Egress, so they would be ignored"
+
+  - it: rejects ingress rules that the policy types would silently ignore
+    set:
+      networkPolicy.enabled: true
+      networkPolicy.policyTypes: [Egress]
+      networkPolicy.ingress:
+        - from:
+            - podSelector: {}
+    asserts:
+      - failedTemplate:
+          errorMessage: "networkPolicy.ingress has rules but networkPolicy.policyTypes does not include Ingress, so they would be ignored"
+
+  - it: rejects a service type that cannot work with a selector
+    set:
+      service.type: ExternalName
+    asserts:
+      - failedTemplate:
+          errorPattern: "service.type"
+
+  - it: rejects autoscaling for a Job
+    set:
+      deployment.enabled: false
+      job.enabled: true
+      autoscaling.enabled: true
+    asserts:
+      - failedTemplate:
+          errorMessage: "autoscaling.enabled requires deployment.enabled or statefulset.enabled"
+
+  - it: rejects autoscaling without a metric
+    set:
+      autoscaling.enabled: true
+      autoscaling.targetCPUUtilizationPercentage: ""
+    asserts:
+      - failedTemplate:
+          errorMessage: "autoscaling.enabled requires targetCPUUtilizationPercentage or targetMemoryUtilizationPercentage"
+
+  - it: rejects a disruption budget for a CronJob
+    set:
+      deployment.enabled: false
+      cronjob.enabled: true
+      cronjob.schedule: "* * * * *"
+      podDisruptionBudget.enabled: true
+      podDisruptionBudget.minAvailable: 1
+    asserts:
+      - failedTemplate:
+          errorMessage: "podDisruptionBudget.enabled requires deployment.enabled or statefulset.enabled"
+
+  - it: rejects a disruption budget with both limits
+    set:
+      podDisruptionBudget.enabled: true
+      podDisruptionBudget.minAvailable: 1
+      podDisruptionBudget.maxUnavailable: 1
+    asserts:
+      - failedTemplate:
+          errorMessage: "podDisruptionBudget: set minAvailable or maxUnavailable, not both"
+
+  - it: rejects a disruption budget with no limit
+    set:
+      podDisruptionBudget.enabled: true
+    asserts:
+      - failedTemplate:
+          errorMessage: "podDisruptionBudget.enabled requires minAvailable or maxUnavailable"
+
+  - it: rejects volumeClaimTemplates on anything but a StatefulSet
+    set:
+      statefulset.volumeClaimTemplates:
+        data:
+          storage: 1Gi
+    asserts:
+      - failedTemplate:
+          errorMessage: "statefulset.volumeClaimTemplates requires statefulset.enabled"
+
+  - it: rejects two mounts that share a volume name
+    set:
+      configMaps:
+        data:
+          enabled: true
+          mountPath: /etc/data
+          data:
+            a: b
+      persistentVolumeClaims:
+        data:
+          mountPath: /var/data
+          storage: 1Gi
+    asserts:
+      - failedTemplate:
+          errorPattern: "share one volume namespace"
+
+  - it: lets a ConfigMap that is not mounted share a name with a PVC
+    set:
+      configMaps:
+        data:
+          enabled: true
+          asEnv: true
+          data:
+            a: b
+      persistentVolumeClaims:
+        data:
+          mountPath: /var/data
+          storage: 1Gi
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: rejects a values key the chart does not know
+    set:
+      replicaCout: 3
+    asserts:
+      - failedTemplate:
+          errorPattern: "replicaCout"
+
+  - it: rejects a nested values key the chart does not know
+    set:
+      ingress.hots: example.test
+    asserts:
+      - failedTemplate:
+          errorPattern: "hots"
+
+  - it: rejects a value of the wrong type
+    set:
+      replicaCount: "three"
+    asserts:
+      - failedTemplate:
+          errorPattern: "replicaCount"
+
+  - it: rejects an invalid enum value
+    set:
+      service.type: Magic
+    asserts:
+      - failedTemplate:
+          errorPattern: "service.type"
+
+  - it: rejects a restart policy a Job cannot use
+    set:
+      job.restartPolicy: Always
+    asserts:
+      - failedTemplate:
+          errorPattern: "job.restartPolicy"
+
+  - it: rejects a malformed image digest
+    set:
+      image.digest: latest
+    asserts:
+      - failedTemplate:
+          errorPattern: "image.digest"
+
+  - it: accepts keys that a parent chart injects
+    set:
+      global:
+        anything: goes
+    asserts:
+      - hasDocuments:
+          count: 0

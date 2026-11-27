@@ -1,0 +1,31 @@
+{{- if .Values.deployment.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "workload.fullname" . }}
+  labels:
+    {{- include "workload.labels" . | nindent 4 }}
+  {{- with include "workload.annotations" (dict "ctx" . "extra" .Values.deployment.annotations "provenance" true) }}
+  annotations:
+    {{- . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ if include "workload.isSet" .Values.replicaCount }}{{ .Values.replicaCount | int64 }}{{ else }}1{{ end }}
+  {{- end }}
+  {{- if include "workload.isSet" .Values.deployment.revisionHistoryLimit }}
+  revisionHistoryLimit: {{ .Values.deployment.revisionHistoryLimit | int64 }}
+  {{- end }}
+  {{- if include "workload.isSet" .Values.deployment.minReadySeconds }}
+  minReadySeconds: {{ .Values.deployment.minReadySeconds | int64 }}
+  {{- end }}
+  {{- with .Values.deployment.strategy }}
+  strategy:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "workload.selectorLabels" . | nindent 6 }}
+  template:
+    {{- include "workload.podTemplate" (dict "ctx" . "probes" true) | nindent 4 }}
+{{- end }}

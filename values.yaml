@@ -1,0 +1,371 @@
+# -- Override the name used for the `app.kubernetes.io/name` label and the container name. Defaults to the release name.
+nameOverride: ""
+# -- Override the name of every generated object. Defaults to the release name.
+fullnameOverride: ""
+
+# -- Labels added to every generated object. The pod template gets them too.
+commonLabels: {}
+# -- Annotations added to every generated object (not to pod templates; use `podAnnotations` for those).
+commonAnnotations: {}
+
+# -- Deployment provenance, rendered as OCI image-spec annotations on the workload object. Only non-empty fields are emitted. Typically written by a deploy pipeline.
+provenance:
+  git:
+    # -- Repository URL. Rendered as `org.opencontainers.image.source`.
+    source: ""
+    # -- Commit SHA. Rendered as `org.opencontainers.image.revision`.
+    revision: ""
+    # -- Branch or tag name. Rendered as `org.opencontainers.image.ref.name`.
+    ref: ""
+    # -- Semantic version. Rendered as `org.opencontainers.image.version`.
+    version: ""
+  deploy:
+    # -- Who or what triggered the deploy. Rendered as `org.opencontainers.image.authors`.
+    actor: ""
+    # -- RFC 3339 deploy time. Rendered as `org.opencontainers.image.created`.
+    timestamp: ""
+
+# -- References to objects that already exist in the cluster. Everything defaults to empty, so
+# nothing is assumed about the cluster the chart is installed into.
+cluster:
+  # -- Name of the External Secrets (ESO) store used by `externalSecrets` entries that do not set their own `secretStoreRef`. Required as soon as one such entry is enabled.
+  clusterSecretStore: ""
+  # -- Name of an image pull secret added to every pod. Overridden by `image.pullSecret`.
+  imagePullSecret: ""
+  # -- `ingressClassName` used when `ingress.className` is empty. Empty leaves the field out, so the cluster's default IngressClass applies.
+  ingressClassName: ""
+  # -- cert-manager issuer used when `ingress.tls.issuer` is empty. Empty emits no cert-manager annotation.
+  certIssuer: ""
+  # -- cert-manager issuer kind (`ClusterIssuer` or `Issuer`).
+  certIssuerKind: ClusterIssuer
+  # -- StorageClass used for PVCs and `volumeClaimTemplates` that do not set one. Empty leaves the field out, so the cluster's default StorageClass applies.
+  localStorageClassName: ""
+
+# -- Free-form map of base URLs, keyed by any name you choose. Available to `tpl` strings in
+# `configMaps.*.data` and `ingress.host`, e.g. `'{{ index .Values.urls "api" }}'`.
+urls: {}
+#  api: https://api.example.test
+
+image:
+  # -- Container image repository.
+  repository: "not-set"
+  # -- Image tag.
+  tag: "not-set"
+  # -- Image digest (`sha256:...`). When set it is appended, giving `repository:tag@digest`.
+  digest: ""
+  # -- Image pull policy.
+  pullPolicy: IfNotPresent
+  # -- Name of a pre-created pull secret. Takes precedence over `cluster.imagePullSecret`.
+  pullSecret: ""
+
+# -- Number of replicas for a Deployment or StatefulSet. Ignored while `autoscaling.enabled` is true.
+replicaCount: 1
+
+# -- Environment variables for the main container (standard Kubernetes `env` entries).
+env: []
+# - name: LOG_LEVEL
+#   value: info
+
+# -- Names of existing ConfigMaps added to `envFrom`.
+extraConfigMapRefs: []
+# - shared-config
+
+# -- Names of existing Secrets added to `envFrom`.
+extraSecretRefs: []
+# - shared-secrets
+
+# -- ConfigMaps to generate, keyed by name. The object is named `<fullname>-<key>`. Values go through `tpl`.
+configMaps: {}
+# app:
+#   enabled: true
+#   asEnv: true            # add to envFrom
+#   data:
+#     LOG_LEVEL: info
+#     API_URL: '{{ index .Values.urls "api" }}'
+# settings:
+#   enabled: true
+#   mountPath: /app/config # mount as files
+#   data:
+#     "settings.json": |
+#       {"verbose": true}
+
+# -- ExternalSecrets (External Secrets Operator) to generate, keyed by name. The ExternalSecret and the Secret it creates are named `<fullname>-<key>`.
+externalSecrets: {}
+# app:
+#   enabled: true
+#   asEnv: true
+#   refreshInterval: 1h
+#   secretStoreRef:
+#     name: my-store
+#     kind: ClusterSecretStore
+#   remoteRefs:
+#     DATABASE_URL: DATABASE_URL_IN_STORE
+
+# -- Fields of an ExternalSecret that the External Secrets operator may fill in when they are omitted, rendered explicitly so the live object matches the manifest and GitOps tools (Argo CD, Flux) report no drift. Set a field to `""` to leave it out, for an operator version that does not know it.
+externalSecretDefaults:
+  # -- `spec.target.deletionPolicy`. The CRD defaults it to `Retain`.
+  deletionPolicy: Retain
+  # -- `remoteRef.conversionStrategy`. Operators that default it use `Default`.
+  conversionStrategy: Default
+  # -- `remoteRef.decodingStrategy`. Operators that default it use `None`.
+  decodingStrategy: None
+  # -- `remoteRef.metadataPolicy`. Operators that default it use `None`.
+  metadataPolicy: None
+  # -- `remoteRef.nullBytePolicy` (`Ignore` or `Fail`). No operator version is known to default it, so it is left out; set it to the value your operator writes if it does fill it in.
+  nullBytePolicy: ""
+
+# -- PersistentVolumeClaims to generate, keyed by name. Always rendered when defined, and annotated `helm.sh/resource-policy: keep`. Mounted automatically when `mountPath` is set.
+persistentVolumeClaims: {}
+# data:
+#   mountPath: /var/lib/data
+#   accessModes: [ReadWriteOnce]
+#   storage: 10Gi
+#   storageClassName: ""
+#   volumeName: ""         # bind to a pre-created PV
+
+# -- Named container ports. Shared by every workload kind; the Service and Ingress refer to them by name.
+ports: []
+# - name: http
+#   containerPort: 8080
+#   protocol: TCP
+
+# -- Container resources.
+resources: {}
+# requests:
+#   cpu: 100m
+#   memory: 128Mi
+# limits:
+#   memory: 256Mi
+
+# -- Liveness probe (any valid Kubernetes probe). Deployment and StatefulSet only.
+livenessProbe: {}
+# httpGet:
+#   path: /healthz
+#   port: http
+
+# -- Readiness probe (any valid Kubernetes probe). Deployment and StatefulSet only.
+readinessProbe: {}
+
+# -- Startup probe (any valid Kubernetes probe). Deployment and StatefulSet only.
+startupProbe: {}
+
+# -- Container lifecycle hooks.
+lifecycle: {}
+# preStop:
+#   exec:
+#     command: ["sleep", "5"]
+
+# -- Container entrypoint override.
+command: []
+
+# -- Container arguments.
+args: []
+
+# Workload kinds: enable exactly one of `deployment`, `statefulset`, `job` and `cronjob`.
+deployment:
+  # -- Render a Deployment.
+  enabled: true
+  # -- Annotations on the Deployment object (not on its pods).
+  annotations: {}
+  # -- Deployment strategy (`type`, `rollingUpdate`). Empty uses the Kubernetes default.
+  strategy: {}
+  # -- (int or empty) Number of old ReplicaSets to keep. Empty uses the Kubernetes default.
+  revisionHistoryLimit: ""
+  # -- (int or empty) Seconds a new pod must be ready before it counts as available. Empty uses the Kubernetes default.
+  minReadySeconds: ""
+
+statefulset:
+  # -- Render a StatefulSet.
+  enabled: false
+  # -- Governing Service name. Defaults to `<fullname>`, or `<fullname>-headless` when `headlessService.enabled`. Immutable on an existing StatefulSet.
+  serviceName: ""
+  # -- Annotations on the StatefulSet object (not on its pods).
+  annotations: {}
+  # -- `OrderedReady` or `Parallel`. Empty uses the Kubernetes default.
+  podManagementPolicy: ""
+  # -- Update strategy (`type`, `rollingUpdate`). Empty uses the Kubernetes default.
+  updateStrategy: {}
+  # -- Retention of PVCs created from `volumeClaimTemplates` (`whenDeleted`, `whenScaled`).
+  persistentVolumeClaimRetentionPolicy: {}
+  headlessService:
+    # -- Also render a headless Service named `<fullname>-headless`.
+    enabled: false
+  # -- Per-replica volumes, keyed by name. Mounted automatically at `mountPath`.
+  volumeClaimTemplates: {}
+  # data:
+  #   mountPath: /var/lib/data
+  #   accessModes: [ReadWriteOnce]
+  #   storage: 10Gi
+  #   storageClassName: ""
+
+job:
+  # -- Render a Job.
+  enabled: false
+  # -- Retries before the Job is marked failed. `0` is honoured.
+  backoffLimit: 3
+  # -- Delete the Job this many seconds after it finishes. Empty disables.
+  ttlSecondsAfterFinished: 600
+  # -- (int or empty) Maximum run time in seconds. Empty disables.
+  activeDeadlineSeconds: ""
+  # -- (int or empty) Pods running in parallel. Empty uses the Kubernetes default.
+  parallelism: ""
+  # -- (int or empty) Successful pods needed. Empty uses the Kubernetes default.
+  completions: ""
+  # -- `OnFailure` or `Never`.
+  restartPolicy: OnFailure
+  # -- Annotations on the Job object, e.g. GitOps sync hooks.
+  annotations: {}
+
+cronjob:
+  # -- Render a CronJob.
+  enabled: false
+  # -- Cron expression. Required when enabled.
+  schedule: ""
+  # -- IANA time zone for the schedule. Empty uses the controller's time zone.
+  timeZone: ""
+  # -- `Allow`, `Forbid` or `Replace`.
+  concurrencyPolicy: Forbid
+  # -- Pause scheduling without deleting the CronJob.
+  suspend: false
+  # -- Seconds a missed run may still be started. `0` is honoured.
+  startingDeadlineSeconds: 300
+  # -- Completed Jobs to keep. `0` is honoured.
+  successfulJobsHistoryLimit: 3
+  # -- Failed Jobs to keep. `0` is honoured.
+  failedJobsHistoryLimit: 1
+  # -- Retries per spawned Job. `0` is honoured.
+  backoffLimit: 3
+  # -- (int or empty) Maximum run time per spawned Job in seconds. Empty disables.
+  activeDeadlineSeconds: ""
+  # -- (int or empty) Delete spawned Jobs this many seconds after they finish. Empty disables.
+  ttlSecondsAfterFinished: ""
+  # -- `OnFailure` or `Never`.
+  restartPolicy: OnFailure
+  # -- Annotations on the CronJob object (not on the Jobs it spawns).
+  annotations: {}
+
+# -- Annotations added to the pod template.
+podAnnotations: {}
+# -- Labels added to the pod template, next to the selector labels.
+podLabels: {}
+
+serviceAccount:
+  # -- Create a ServiceAccount named `<fullname>` (or `name`).
+  create: false
+  # -- Use this ServiceAccount. Empty uses the namespace default unless `create` is true.
+  name: ""
+  # -- Annotations on the created ServiceAccount.
+  annotations: {}
+  # -- (bool or empty) Set `automountServiceAccountToken` on the pod and the ServiceAccount. Empty leaves it unset.
+  automountServiceAccountToken: ""
+
+# -- Extra init containers (standard Kubernetes container specs).
+initContainers: []
+# -- Extra sidecar containers (standard Kubernetes container specs).
+extraContainers: []
+
+# -- Node selector.
+nodeSelector: {}
+# -- Affinity rules.
+affinity: {}
+# -- Tolerations.
+tolerations: []
+# -- Topology spread constraints.
+topologySpreadConstraints: []
+# -- PriorityClass name.
+priorityClassName: ""
+# -- (int or empty) Termination grace period in seconds. Empty uses the Kubernetes default.
+terminationGracePeriodSeconds: ""
+
+# -- Extra volumes (standard Kubernetes volume specs), e.g. an `emptyDir` for `/tmp`.
+extraVolumes: []
+# - name: tmp
+#   emptyDir:
+#     sizeLimit: 100Mi
+
+# -- Extra volume mounts for the main container. Names must match `extraVolumes`.
+extraVolumeMounts: []
+# - name: tmp
+#   mountPath: /tmp
+
+service:
+  # -- Render a Service. Nothing is rendered when there are no ports to expose.
+  enabled: true
+  # -- Service type.
+  type: ClusterIP
+  # -- Names from `ports` to expose. Empty exposes all of them.
+  ports: []
+  # - http
+
+ingress:
+  # -- Render an Ingress. Requires `service.enabled`.
+  enabled: false
+  # -- IngressClass name. Defaults to `cluster.ingressClassName`.
+  className: ""
+  # -- Host name. Goes through `tpl`, e.g. `'{{ (urlParse (index .Values.urls "api")).host }}'`.
+  host: ""
+  # -- Name of the entry in `ports` to route to.
+  port: http
+  # -- Path.
+  path: /
+  # -- `Prefix`, `Exact` or `ImplementationSpecific`.
+  pathType: Prefix
+  tls:
+    # -- Add a TLS section.
+    enabled: true
+    # -- TLS secret name. Defaults to `<fullname>-tls`.
+    secretName: ""
+    # -- cert-manager issuer. Defaults to `cluster.certIssuer`; with neither set no annotation is emitted.
+    issuer: ""
+    # -- cert-manager issuer kind. Defaults to `cluster.certIssuerKind`.
+    issuerKind: ""
+  # -- Ingress annotations. These win over the generated cert-manager annotation.
+  annotations: {}
+
+autoscaling:
+  # -- Render a HorizontalPodAutoscaler (Deployment and StatefulSet only). Removes `replicas` from the workload.
+  enabled: false
+  # -- Lower bound.
+  minReplicas: 1
+  # -- Upper bound. Required when enabled.
+  maxReplicas: 3
+  # -- Target average CPU utilization percentage. Empty disables the metric.
+  targetCPUUtilizationPercentage: 80
+  # -- (int or empty) Target average memory utilization percentage. Empty disables the metric.
+  targetMemoryUtilizationPercentage: ""
+  # -- HPA `behavior` block.
+  behavior: {}
+
+podDisruptionBudget:
+  # -- Render a PodDisruptionBudget (Deployment and StatefulSet only).
+  enabled: false
+  # -- (int, percentage or empty) Minimum available pods (number or percentage). Set this or `maxUnavailable`.
+  minAvailable: ""
+  # -- (int, percentage or empty) Maximum unavailable pods (number or percentage). Set this or `minAvailable`.
+  maxUnavailable: ""
+
+networkPolicy:
+  # -- Render a NetworkPolicy selecting this workload's pods.
+  enabled: false
+  # -- Policy types. With `Ingress` and no `ingress` rules, all inbound traffic is denied.
+  policyTypes:
+    - Ingress
+  # -- Ingress rules (standard NetworkPolicy `ingress` entries).
+  ingress: []
+  # -- Egress rules (standard NetworkPolicy `egress` entries).
+  egress: []
+
+podSecurityContext:
+  # -- Set to false to render no pod securityContext. Every other key here is passed through.
+  enabled: true
+  # -- Refuse to start a container that would run as root.
+  runAsNonRoot: true
+
+containerSecurityContext:
+  # -- Set to false to render no container securityContext. Every other key here is passed through.
+  enabled: true
+  # -- Forbid a process from gaining more privileges than its parent.
+  allowPrivilegeEscalation: false
+  capabilities:
+    # -- Linux capabilities to drop.
+    drop: [ALL]

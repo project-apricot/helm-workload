@@ -1,0 +1,14 @@
+{{- $kind := include "workload.workloadKind" . }}
+{{ .Chart.Name }} {{ .Chart.Version }} installed as "{{ include "workload.fullname" . }}"{{ if $kind }} ({{ $kind }}){{ end }}.
+{{- if eq $kind "" }}
+
+No workload kind is enabled. Enable one of deployment, statefulset, job or cronjob.
+{{- end }}
+{{- if eq .Values.image.repository "not-set" }}
+
+image.repository is still "not-set". Set image.repository and image.tag before deploying.
+{{- end }}
+{{- if eq (toString .Values.image.tag) "not-set" }}
+
+image.tag is still "not-set".
+{{- end }}

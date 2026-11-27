@@ -1,0 +1,198 @@
+suite: ingress
+templates:
+  - ingress.yaml
+release:
+  name: example
+set:
+  ports:
+    - name: http
+      containerPort: 8080
+  ingress.enabled: true
+  ingress.host: app.example.test
+tests:
+  - it: renders nothing by default
+    set:
+      ingress.enabled: false
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: renders an Ingress routing to the named port
+    asserts:
+      - isKind:
+          of: Ingress
+      - equal:
+          path: spec.rules[0].host
+          value: app.example.test
+      - equal:
+          path: spec.rules[0].http.paths[0]
+          value:
+            path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: example
+                port:
+                  name: http
+
+  - it: adds TLS with a default secret name
+    asserts:
+      - equal:
+          path: spec.tls
+          value:
+            - secretName: example-tls
+              hosts:
+                - app.example.test
+
+  - it: honours tls.secretName and tls.enabled
+    set:
+      ingress.tls.secretName: custom-tls
+    asserts:
+      - equal:
+          path: spec.tls[0].secretName
+          value: custom-tls
+  - it: renders no TLS when disabled
+    set:
+      ingress.tls.enabled: false
+    asserts:
+      - notExists:
+          path: spec.tls
+
+  - it: renders the host through tpl
+    set:
+      urls.api: https://api.example.test/v1
+      ingress.host: '{{ (urlParse (index .Values.urls "api")).host }}'
+    asserts:
+      - equal:
+          path: spec.rules[0].host
+          value: api.example.test
+      - equal:
+          path: spec.tls[0].hosts[0]
+          value: api.example.test
+
+  - it: renders no host rule or TLS host when the host is empty
+    set:
+      ingress.host: ""
+    asserts:
+      - notExists:
+          path: spec.rules[0].host
+      - notExists:
+          path: spec.tls[0].hosts
+
+  - it: emits no cert-manager annotation without an issuer
+    asserts:
+      - notExists:
+          path: metadata.annotations
+
+  - it: emits no cert-manager annotation without TLS
+    set:
+      cluster.certIssuer: issuer
+      ingress.tls.enabled: false
+    asserts:
+      - notExists:
+          path: metadata.annotations
+
+  - it: annotates with a ClusterIssuer from the cluster defaults
+    set:
+      cluster.certIssuer: cluster-issuer
+    asserts:
+      - equal:
+          path: metadata.annotations
+          value:
+            cert-manager.io/cluster-issuer: cluster-issuer
+
+  - it: annotates with a namespaced Issuer
+    set:
+      ingress.tls.issuer: ns-issuer
+      ingress.tls.issuerKind: Issuer
+    asserts:
+      - equal:
+          path: metadata.annotations
+          value:
+            cert-manager.io/issuer: ns-issuer
+
+  - it: prefers the ingress issuer over the cluster default
+    set:
+      cluster.certIssuer: cluster-issuer
+      ingress.tls.issuer: own-issuer
+    asserts:
+      - equal:
+          path: metadata.annotations["cert-manager.io/cluster-issuer"]
+          value: own-issuer
+
+  - it: lets user annotations win and sit next to the generated one
+    set:
+      cluster.certIssuer: cluster-issuer
+      ingress.annotations:
+        cert-manager.io/cluster-issuer: override
+        example.test/x: value
+    asserts:
+      - equal:
+          path: metadata.annotations
+          value:
+            cert-manager.io/cluster-issuer: override
+            example.test/x: value
+
+  - it: leaves the ingress class to the cluster by default
+    asserts:
+      - notExists:
+          path: spec.ingressClassName
+
+  - it: uses the cluster ingress class
+    set:
+      cluster.ingressClassName: cluster-class
+    asserts:
+      - equal:
+          path: spec.ingressClassName
+          value: cluster-class
+
+  - it: prefers the ingress class over the cluster default
+    set:
+      cluster.ingressClassName: cluster-class
+      ingress.className: own-class
+    asserts:
+      - equal:
+          path: spec.ingressClassName
+          value: own-class
+
+  - it: honours path, pathType and port
+    set:
+      ports:
+        - name: http
+          containerPort: 8080
+        - name: admin
+          containerPort: 9090
+      ingress.path: /admin
+      ingress.pathType: Exact
+      ingress.port: admin
+    asserts:
+      - equal:
+          path: spec.rules[0].http.paths[0].path
+          value: /admin
+      - equal:
+          path: spec.rules[0].http.paths[0].pathType
+          value: Exact
+      - equal:
+          path: spec.rules[0].http.paths[0].backend.service.port.name
+          value: admin
+
+  - it: accepts a wildcard host
+    set:
+      ingress.host: "*.example.test"
+    asserts:
+      - equal:
+          path: spec.rules[0].host
+          value: "*.example.test"
+      - equal:
+          path: spec.tls[0].hosts[0]
+          value: "*.example.test"
+
+  - it: lets a user blank the generated cert-manager annotation, as the predecessor did
+    set:
+      cluster.certIssuer: cluster-issuer
+      ingress.annotations:
+        cert-manager.io/cluster-issuer: ""
+    asserts:
+      - equal:
+          path: metadata.annotations["cert-manager.io/cluster-issuer"]
+          value: ""

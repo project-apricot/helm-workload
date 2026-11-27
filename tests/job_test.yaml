@@ -1,0 +1,119 @@
+suite: job
+templates:
+  - job.yaml
+release:
+  name: example
+set:
+  deployment.enabled: false
+  job.enabled: true
+tests:
+  - it: renders a Job with the defaults
+    asserts:
+      - isKind:
+          of: Job
+      - equal:
+          path: metadata.name
+          value: example
+      - equal:
+          path: spec.backoffLimit
+          value: 3
+      - equal:
+          path: spec.ttlSecondsAfterFinished
+          value: 600
+      - equal:
+          path: spec.template.spec.restartPolicy
+          value: OnFailure
+      - notExists:
+          path: spec.activeDeadlineSeconds
+      - notExists:
+          path: spec.parallelism
+      - notExists:
+          path: spec.completions
+
+  - it: renders nothing when disabled
+    set:
+      job.enabled: false
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: honours backoffLimit 0
+    set:
+      job.backoffLimit: 0
+    asserts:
+      - equal:
+          path: spec.backoffLimit
+          value: 0
+
+  - it: honours ttlSecondsAfterFinished 0 and drops an empty one
+    set:
+      job.ttlSecondsAfterFinished: 0
+    asserts:
+      - equal:
+          path: spec.ttlSecondsAfterFinished
+          value: 0
+  - it: drops an empty ttlSecondsAfterFinished
+    set:
+      job.ttlSecondsAfterFinished: ""
+    asserts:
+      - notExists:
+          path: spec.ttlSecondsAfterFinished
+
+  - it: renders the optional fields
+    set:
+      job.activeDeadlineSeconds: 1800
+      job.parallelism: 2
+      job.completions: 4
+      job.restartPolicy: Never
+    asserts:
+      - equal:
+          path: spec.activeDeadlineSeconds
+          value: 1800
+      - equal:
+          path: spec.parallelism
+          value: 2
+      - equal:
+          path: spec.completions
+          value: 4
+      - equal:
+          path: spec.template.spec.restartPolicy
+          value: Never
+
+  - it: renders no ports, probes or selector
+    set:
+      ports:
+        - name: http
+          containerPort: 8080
+      readinessProbe:
+        httpGet:
+          path: /
+          port: http
+    asserts:
+      - notExists:
+          path: spec.template.spec.containers[0].ports
+      - notExists:
+          path: spec.template.spec.containers[0].readinessProbe
+      - notExists:
+          path: spec.selector
+
+  - it: merges user annotations with provenance, user first
+    set:
+      job.annotations:
+        argocd.argoproj.io/hook: Sync
+        argocd.argoproj.io/hook-delete-policy: BeforeHookCreation,HookSucceeded
+      provenance.git.revision: abc123
+    asserts:
+      - equal:
+          path: metadata.annotations
+          value:
+            argocd.argoproj.io/hook: Sync
+            argocd.argoproj.io/hook-delete-policy: BeforeHookCreation,HookSucceeded
+            org.opencontainers.image.revision: abc123
+
+  - it: renders the command
+    set:
+      command: ["sh", "-c", "true"]
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].command
+          value: ["sh", "-c", "true"]

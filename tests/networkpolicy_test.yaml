@@ -1,0 +1,48 @@
+suite: networkpolicy
+templates:
+  - networkpolicy.yaml
+release:
+  name: example
+tests:
+  - it: renders nothing by default
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: denies all inbound traffic when enabled with no rules
+    set:
+      networkPolicy.enabled: true
+    asserts:
+      - isKind:
+          of: NetworkPolicy
+      - equal:
+          path: spec
+          value:
+            podSelector:
+              matchLabels:
+                app.kubernetes.io/name: example
+                app.kubernetes.io/instance: example
+            policyTypes:
+              - Ingress
+
+  - it: passes rules through
+    set:
+      networkPolicy.enabled: true
+      networkPolicy.policyTypes: [Ingress, Egress]
+      networkPolicy.ingress:
+        - from:
+            - podSelector: {}
+          ports:
+            - port: 8080
+      networkPolicy.egress:
+        - to:
+            - namespaceSelector: {}
+    asserts:
+      - equal:
+          path: spec.policyTypes
+          value: [Ingress, Egress]
+      - equal:
+          path: spec.ingress[0].ports[0].port
+          value: 8080
+      - exists:
+          path: spec.egress[0].to

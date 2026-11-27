@@ -1,0 +1,155 @@
+# Every optional feature at once, to lint and to validate against the Kubernetes schemas. It includes
+# ExternalSecrets, so it is meant to be rendered, not installed on a cluster without those CRDs.
+nameOverride: ""
+commonLabels:
+  team: example
+commonAnnotations:
+  example.test/owner: platform
+
+provenance:
+  git:
+    source: https://github.com/example/app
+    revision: 0123456789abcdef0123456789abcdef01234567
+    ref: v1.2.3
+    version: 1.2.3
+  deploy:
+    actor: someone
+    timestamp: "2026-01-02T03:04:05Z"
+
+cluster:
+  clusterSecretStore: example-store
+  imagePullSecret: example-registry-secret
+  ingressClassName: example
+  certIssuer: example-issuer
+  certIssuerKind: ClusterIssuer
+  localStorageClassName: example-class
+
+urls:
+  api: https://api.example.test
+
+image:
+  repository: registry.example.test/app
+  tag: "1.2.3"
+  digest: sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+
+ports:
+  - name: http
+    containerPort: 8080
+  - name: metrics
+    containerPort: 9090
+
+service:
+  enabled: true
+  type: ClusterIP
+  ports: [http]
+
+ingress:
+  enabled: true
+  host: '{{ (urlParse (index .Values.urls "api")).host }}'
+
+env:
+  - name: POD_NAME
+    valueFrom:
+      fieldRef:
+        fieldPath: metadata.name
+
+configMaps:
+  app:
+    enabled: true
+    asEnv: true
+    data:
+      API_URL: '{{ index .Values.urls "api" }}'
+
+externalSecrets:
+  creds:
+    enabled: true
+    asEnv: true
+    remoteRefs:
+      DATABASE_URL: DATABASE_URL_IN_STORE
+  files:
+    enabled: true
+    mountPath: /etc/secrets
+    secretStoreRef:
+      name: other-store
+      kind: SecretStore
+    remoteRefs:
+      TOKEN: TOKEN_IN_STORE
+
+persistentVolumeClaims:
+  data:
+    mountPath: /var/lib/data
+    storage: 1Gi
+
+serviceAccount:
+  create: true
+  annotations:
+    example.test/role: app
+  automountServiceAccountToken: false
+
+podAnnotations:
+  example.test/scrape: "true"
+podLabels:
+  tier: backend
+
+initContainers:
+  - name: init
+    image: busybox:1.37
+    command: ["sh", "-c", "true"]
+extraContainers:
+  - name: sidecar
+    image: busybox:1.37
+    command: ["sh", "-c", "sleep infinity"]
+
+priorityClassName: example
+terminationGracePeriodSeconds: 45
+topologySpreadConstraints:
+  - maxSkew: 1
+    topologyKey: kubernetes.io/hostname
+    whenUnsatisfiable: ScheduleAnyway
+    labelSelector:
+      matchLabels:
+        app.kubernetes.io/instance: example
+
+lifecycle:
+  preStop:
+    exec:
+      command: ["sleep", "5"]
+
+readinessProbe:
+  httpGet:
+    path: /ready
+    port: http
+
+deployment:
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+  revisionHistoryLimit: 3
+  minReadySeconds: 5
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 6
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 80
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300
+
+podDisruptionBudget:
+  enabled: true
+  maxUnavailable: 1
+
+networkPolicy:
+  enabled: true
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - namespaceSelector: {}
+      ports:
+        - port: 8080
+  egress:
+    - to:
+        - namespaceSelector: {}

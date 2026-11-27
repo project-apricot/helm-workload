@@ -1,0 +1,609 @@
+suite: deployment
+templates:
+  - deployment.yaml
+release:
+  name: example
+tests:
+  - it: renders a Deployment by default
+    asserts:
+      - isKind:
+          of: Deployment
+      - equal:
+          path: metadata.name
+          value: example
+      - equal:
+          path: spec.replicas
+          value: 1
+      - equal:
+          path: spec.template.spec.containers[0].name
+          value: example
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: "not-set:not-set"
+      - equal:
+          path: spec.template.spec.containers[0].imagePullPolicy
+          value: IfNotPresent
+
+  - it: renders nothing when disabled
+    set:
+      deployment.enabled: false
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: selects pods by name and instance only
+    asserts:
+      - equal:
+          path: spec.selector.matchLabels
+          value:
+            app.kubernetes.io/name: example
+            app.kubernetes.io/instance: example
+
+  - it: puts the chart version on the object but not on the pods
+    asserts:
+      - equal:
+          path: metadata.labels["helm.sh/chart"]
+          value: workload-0.0.0
+      - notExists:
+          path: spec.template.metadata.labels["helm.sh/chart"]
+      - equal:
+          path: spec.template.metadata.labels
+          value:
+            app.kubernetes.io/name: example
+            app.kubernetes.io/instance: example
+
+  - it: honours replicaCount 0
+    set:
+      replicaCount: 0
+    asserts:
+      - equal:
+          path: spec.replicas
+          value: 0
+
+  - it: leaves replicas to the autoscaler
+    set:
+      autoscaling.enabled: true
+    asserts:
+      - notExists:
+          path: spec.replicas
+
+  - it: renders strategy and history settings
+    set:
+      deployment.strategy:
+        type: RollingUpdate
+        rollingUpdate:
+          maxUnavailable: 0
+      deployment.revisionHistoryLimit: 0
+      deployment.minReadySeconds: 5
+    asserts:
+      - equal:
+          path: spec.strategy.rollingUpdate.maxUnavailable
+          value: 0
+      - equal:
+          path: spec.revisionHistoryLimit
+          value: 0
+      - equal:
+          path: spec.minReadySeconds
+          value: 5
+
+  - it: builds the image reference from repository, tag and digest
+    set:
+      image.repository: registry.example.test/app
+      image.tag: "1.2.3"
+      image.digest: sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: registry.example.test/app:1.2.3@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+
+  - it: omits the tag separator when only a digest pins the image
+    set:
+      image.repository: registry.example.test/app
+      image.tag: ""
+      image.digest: sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: registry.example.test/app@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+
+  - it: never lets commonLabels or podLabels change the labels the selector matches
+    set:
+      commonLabels:
+        app.kubernetes.io/name: other
+      podLabels:
+        app.kubernetes.io/instance: other
+    asserts:
+      - equal:
+          path: spec.template.metadata.labels["app.kubernetes.io/name"]
+          value: example
+      - equal:
+          path: spec.template.metadata.labels["app.kubernetes.io/instance"]
+          value: example
+
+  - it: renders a numeric-looking release name as a string in the selector and the container name
+    release:
+      name: "123"
+    asserts:
+      - equal:
+          path: spec.selector.matchLabels["app.kubernetes.io/instance"]
+          value: "123"
+      - equal:
+          path: spec.template.spec.containers[0].name
+          value: "123"
+
+  - it: prefers image.pullSecret over cluster.imagePullSecret
+    set:
+      cluster.imagePullSecret: cluster-secret
+      image.pullSecret: image-secret
+    asserts:
+      - equal:
+          path: spec.template.spec.imagePullSecrets
+          value:
+            - name: image-secret
+
+  - it: falls back to cluster.imagePullSecret
+    set:
+      cluster.imagePullSecret: cluster-secret
+    asserts:
+      - equal:
+          path: spec.template.spec.imagePullSecrets
+          value:
+            - name: cluster-secret
+
+  - it: renders no imagePullSecrets by default
+    asserts:
+      - notExists:
+          path: spec.template.spec.imagePullSecrets
+
+  - it: applies the default security contexts
+    asserts:
+      - equal:
+          path: spec.template.spec.securityContext
+          value:
+            runAsNonRoot: true
+      - equal:
+          path: spec.template.spec.containers[0].securityContext
+          value:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+
+  - it: passes extra security context keys through
+    set:
+      podSecurityContext.runAsUser: 999
+      podSecurityContext.fsGroup: 999
+      containerSecurityContext.readOnlyRootFilesystem: true
+    asserts:
+      - equal:
+          path: spec.template.spec.securityContext
+          value:
+            runAsNonRoot: true
+            runAsUser: 999
+            fsGroup: 999
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.readOnlyRootFilesystem
+          value: true
+
+  - it: renders no security context when disabled
+    set:
+      podSecurityContext.enabled: false
+      containerSecurityContext.enabled: false
+    asserts:
+      - notExists:
+          path: spec.template.spec.securityContext
+      - notExists:
+          path: spec.template.spec.containers[0].securityContext
+
+  - it: renders ports and probes
+    set:
+      ports:
+        - name: http
+          containerPort: 8080
+      livenessProbe:
+        httpGet:
+          path: /healthz
+          port: http
+      readinessProbe:
+        httpGet:
+          path: /ready
+          port: http
+      startupProbe:
+        httpGet:
+          path: /healthz
+          port: http
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].ports
+          value:
+            - name: http
+              containerPort: 8080
+      - exists:
+          path: spec.template.spec.containers[0].livenessProbe
+      - exists:
+          path: spec.template.spec.containers[0].readinessProbe
+      - exists:
+          path: spec.template.spec.containers[0].startupProbe
+
+  - it: wires generated ConfigMaps, Secrets and PVCs into the pod
+    set:
+      cluster.clusterSecretStore: store
+      extraConfigMapRefs: [shared-config]
+      extraSecretRefs: [shared-secrets]
+      configMaps:
+        app:
+          enabled: true
+          asEnv: true
+          data:
+            A: b
+        files:
+          enabled: true
+          mountPath: /etc/files
+          data:
+            f: g
+        off:
+          enabled: false
+          asEnv: true
+          data:
+            X: y
+      externalSecrets:
+        creds:
+          enabled: true
+          asEnv: true
+          remoteRefs:
+            K: R
+        certs:
+          enabled: true
+          mountPath: /etc/certs
+          remoteRefs:
+            C: R2
+      persistentVolumeClaims:
+        data:
+          mountPath: /var/data
+          storage: 1Gi
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].envFrom
+          value:
+            - configMapRef:
+                name: example-app
+            - configMapRef:
+                name: shared-config
+            - secretRef:
+                name: example-creds
+            - secretRef:
+                name: shared-secrets
+      - equal:
+          path: spec.template.spec.containers[0].volumeMounts
+          value:
+            - name: files
+              mountPath: /etc/files
+              readOnly: true
+            - name: certs
+              mountPath: /etc/certs
+              readOnly: true
+            - name: data
+              mountPath: /var/data
+      - equal:
+          path: spec.template.spec.volumes
+          value:
+            - name: files
+              configMap:
+                name: example-files
+            - name: certs
+              secret:
+                secretName: example-certs
+            - name: data
+              persistentVolumeClaim:
+                claimName: example-data
+
+  - it: appends extra volumes and mounts after the generated ones
+    set:
+      configMaps:
+        files:
+          enabled: true
+          mountPath: /etc/files
+          data:
+            f: g
+      extraVolumes:
+        - name: tmp
+          emptyDir: {}
+      extraVolumeMounts:
+        - name: tmp
+          mountPath: /tmp
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].volumeMounts[1]
+          value:
+            name: tmp
+            mountPath: /tmp
+      - equal:
+          path: spec.template.spec.volumes[1]
+          value:
+            name: tmp
+            emptyDir: {}
+
+  - it: adds a checksum annotation for each of ConfigMaps and ExternalSecrets that exist
+    set:
+      cluster.clusterSecretStore: store
+      configMaps:
+        app:
+          enabled: true
+          data:
+            A: b
+      externalSecrets:
+        creds:
+          enabled: true
+          remoteRefs:
+            K: R
+    asserts:
+      - exists:
+          path: spec.template.metadata.annotations["checksum/configmaps"]
+      - exists:
+          path: spec.template.metadata.annotations["checksum/externalsecrets"]
+
+  - it: adds no pod annotations when there is nothing to checksum
+    asserts:
+      - notExists:
+          path: spec.template.metadata.annotations
+
+  # The pod checksums decide when pods restart. They must follow what a pod reads (ConfigMap data,
+  # ExternalSecret specs) and nothing else: a chart release, or a label or annotation change, must not
+  # restart every workload. The hashes below are pinned on purpose; if serialisation changes, update them
+  # knowingly, because doing so restarts every consumer once.
+  - it: pins the pod checksums for a given set of ConfigMaps and ExternalSecrets
+    set:
+      cluster.clusterSecretStore: store
+      configMaps:
+        app:
+          enabled: true
+          asEnv: true
+          data:
+            A: b
+      externalSecrets:
+        creds:
+          enabled: true
+          asEnv: true
+          remoteRefs:
+            K: R
+    asserts:
+      - equal:
+          path: spec.template.metadata.annotations["checksum/configmaps"]
+          value: 0ac9a46e175f2647a620deb37b9df643ffa06da3f6ab5aea277594cdf110f14c
+      - equal:
+          path: spec.template.metadata.annotations["checksum/externalsecrets"]
+          value: 8aec3f21a2cc4b5b4d3d906fc0d3bcc981a49af067ddabe3693769dcd0566df1
+
+  - it: keeps the checksums when only the chart version and metadata change
+    chart:
+      version: 9.9.9
+    set:
+      cluster.clusterSecretStore: store
+      commonLabels:
+        team: example
+      commonAnnotations:
+        example.test/owner: platform
+      configMaps:
+        app:
+          enabled: true
+          asEnv: true
+          data:
+            A: b
+      externalSecrets:
+        creds:
+          enabled: true
+          asEnv: true
+          remoteRefs:
+            K: R
+    asserts:
+      - equal:
+          path: metadata.labels["helm.sh/chart"]
+          value: workload-9.9.9
+      - equal:
+          path: spec.template.metadata.annotations["checksum/configmaps"]
+          value: 0ac9a46e175f2647a620deb37b9df643ffa06da3f6ab5aea277594cdf110f14c
+      - equal:
+          path: spec.template.metadata.annotations["checksum/externalsecrets"]
+          value: 8aec3f21a2cc4b5b4d3d906fc0d3bcc981a49af067ddabe3693769dcd0566df1
+
+  - it: changes the checksums when ConfigMap data or an ExternalSecret reference changes
+    set:
+      cluster.clusterSecretStore: store
+      configMaps:
+        app:
+          enabled: true
+          asEnv: true
+          data:
+            A: changed
+      externalSecrets:
+        creds:
+          enabled: true
+          asEnv: true
+          remoteRefs:
+            K: OTHER
+    asserts:
+      - notEqual:
+          path: spec.template.metadata.annotations["checksum/configmaps"]
+          value: 0ac9a46e175f2647a620deb37b9df643ffa06da3f6ab5aea277594cdf110f14c
+      - notEqual:
+          path: spec.template.metadata.annotations["checksum/externalsecrets"]
+          value: 8aec3f21a2cc4b5b4d3d906fc0d3bcc981a49af067ddabe3693769dcd0566df1
+
+  - it: lets podAnnotations and podLabels through
+    set:
+      podAnnotations:
+        example.test/scrape: "true"
+      podLabels:
+        tier: backend
+    asserts:
+      - equal:
+          path: spec.template.metadata.annotations["example.test/scrape"]
+          value: "true"
+      - equal:
+          path: spec.template.metadata.labels.tier
+          value: backend
+
+  - it: lets commonLabels and commonAnnotations through
+    set:
+      commonLabels:
+        team: example
+      commonAnnotations:
+        example.test/owner: platform
+    asserts:
+      - equal:
+          path: metadata.labels.team
+          value: example
+      - equal:
+          path: metadata.annotations["example.test/owner"]
+          value: platform
+      - equal:
+          path: spec.template.metadata.labels.team
+          value: example
+      - notExists:
+          path: spec.template.metadata.annotations
+
+  - it: renders provenance as OCI annotations on the object only
+    set:
+      provenance:
+        git:
+          source: https://github.com/example/app
+          revision: abc123
+          ref: v1.2.3
+          version: 1.2.3
+        deploy:
+          actor: someone
+          timestamp: "2026-01-02T03:04:05Z"
+    asserts:
+      - equal:
+          path: metadata.annotations
+          value:
+            org.opencontainers.image.source: https://github.com/example/app
+            org.opencontainers.image.revision: abc123
+            org.opencontainers.image.ref.name: v1.2.3
+            org.opencontainers.image.version: 1.2.3
+            org.opencontainers.image.authors: someone
+            org.opencontainers.image.created: "2026-01-02T03:04:05Z"
+      - notExists:
+          path: spec.template.metadata.annotations
+
+  - it: emits only the provenance fields that are set
+    set:
+      provenance.git.revision: abc123
+    asserts:
+      - equal:
+          path: metadata.annotations
+          value:
+            org.opencontainers.image.revision: abc123
+
+  - it: lets user annotations win over provenance
+    set:
+      deployment.annotations:
+        org.opencontainers.image.revision: from-user
+        example.test/x: value
+      provenance.git.revision: from-provenance
+    asserts:
+      - equal:
+          path: metadata.annotations["org.opencontainers.image.revision"]
+          value: from-user
+      - equal:
+          path: metadata.annotations["example.test/x"]
+          value: value
+
+  - it: uses the service account only when asked to
+    asserts:
+      - notExists:
+          path: spec.template.spec.serviceAccountName
+  - it: uses the created service account
+    set:
+      serviceAccount.create: true
+    asserts:
+      - equal:
+          path: spec.template.spec.serviceAccountName
+          value: example
+  - it: uses a named service account
+    set:
+      serviceAccount.name: existing
+      serviceAccount.automountServiceAccountToken: false
+    asserts:
+      - equal:
+          path: spec.template.spec.serviceAccountName
+          value: existing
+      - equal:
+          path: spec.template.spec.automountServiceAccountToken
+          value: false
+
+  - it: renders pod scheduling and lifecycle options
+    set:
+      priorityClassName: high
+      terminationGracePeriodSeconds: 0
+      nodeSelector:
+        disk: ssd
+      tolerations:
+        - key: dedicated
+          operator: Exists
+      affinity:
+        podAntiAffinity: {}
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: zone
+          whenUnsatisfiable: ScheduleAnyway
+      lifecycle:
+        preStop:
+          exec:
+            command: ["sleep", "5"]
+      initContainers:
+        - name: init
+          image: busybox
+      extraContainers:
+        - name: sidecar
+          image: busybox
+    asserts:
+      - equal:
+          path: spec.template.spec.priorityClassName
+          value: high
+      - equal:
+          path: spec.template.spec.terminationGracePeriodSeconds
+          value: 0
+      - equal:
+          path: spec.template.spec.nodeSelector.disk
+          value: ssd
+      - exists:
+          path: spec.template.spec.tolerations
+      - exists:
+          path: spec.template.spec.affinity
+      - exists:
+          path: spec.template.spec.topologySpreadConstraints
+      - exists:
+          path: spec.template.spec.containers[0].lifecycle
+      - equal:
+          path: spec.template.spec.initContainers[0].name
+          value: init
+      - equal:
+          path: spec.template.spec.containers[1].name
+          value: sidecar
+
+  - it: renders command, args, env and resources
+    set:
+      command: ["run"]
+      args: ["--flag"]
+      env:
+        - name: A
+          value: b
+      resources:
+        limits:
+          memory: 64Mi
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].command
+          value: ["run"]
+      - equal:
+          path: spec.template.spec.containers[0].args
+          value: ["--flag"]
+      - equal:
+          path: spec.template.spec.containers[0].env
+          value:
+            - name: A
+              value: b
+      - equal:
+          path: spec.template.spec.containers[0].resources.limits.memory
+          value: 64Mi

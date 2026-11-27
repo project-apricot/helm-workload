@@ -1,0 +1,16 @@
+image:
+  repository: registry.example.test/app
+  tag: "1.0.0"
+
+configMaps:
+  app:
+    enabled: true
+    asEnv: true
+    data:
+      LOG_LEVEL: info
+      API_URL: https://base.example.test
+      FIXED: base
+  extra:
+    enabled: true
+    data:
+      X: y

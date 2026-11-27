@@ -1,0 +1,170 @@
+suite: service
+templates:
+  - service.yaml
+release:
+  name: example
+tests:
+  - it: renders nothing when there are no ports to expose
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: exposes every port by default
+    set:
+      ports:
+        - name: http
+          containerPort: 8080
+        - name: grpc
+          containerPort: 9090
+          protocol: TCP
+    asserts:
+      - isKind:
+          of: Service
+      - equal:
+          path: metadata.name
+          value: example
+      - equal:
+          path: spec.type
+          value: ClusterIP
+      - equal:
+          path: spec.selector
+          value:
+            app.kubernetes.io/name: example
+            app.kubernetes.io/instance: example
+      - equal:
+          path: spec.ports
+          value:
+            - name: http
+              port: 8080
+              targetPort: http
+              protocol: TCP
+            - name: grpc
+              port: 9090
+              targetPort: grpc
+              protocol: TCP
+
+  - it: exposes only the named subset, in the order given
+    set:
+      ports:
+        - name: http
+          containerPort: 8080
+        - name: grpc
+          containerPort: 9090
+        - name: metrics
+          containerPort: 9100
+      service.ports: [metrics, http]
+    asserts:
+      - equal:
+          path: spec.ports[0].name
+          value: metrics
+      - equal:
+          path: spec.ports[1].name
+          value: http
+      - lengthEqual:
+          path: spec.ports
+          count: 2
+
+  - it: keeps the protocol of a UDP port
+    set:
+      ports:
+        - name: dns
+          containerPort: 53
+          protocol: UDP
+    asserts:
+      - equal:
+          path: spec.ports[0].protocol
+          value: UDP
+
+  - it: renders nothing when disabled
+    set:
+      service.enabled: false
+      ports:
+        - name: http
+          containerPort: 8080
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: honours the service type
+    set:
+      service.type: NodePort
+      ports:
+        - name: http
+          containerPort: 8080
+    asserts:
+      - equal:
+          path: spec.type
+          value: NodePort
+
+  - it: fails on a port name that does not exist
+    set:
+      ports:
+        - name: http
+          containerPort: 8080
+      service.ports: [htpp]
+    asserts:
+      - failedTemplate:
+          errorPattern: 'service.ports lists "htpp", which is not a name in ports \(known: http\)'
+
+  - it: renders no headless service by default
+    set:
+      deployment.enabled: false
+      statefulset.enabled: true
+      ports:
+        - name: http
+          containerPort: 8080
+    asserts:
+      - hasDocuments:
+          count: 1
+
+  - it: renders a headless service for a StatefulSet on request
+    set:
+      deployment.enabled: false
+      statefulset.enabled: true
+      statefulset.headlessService.enabled: true
+      ports:
+        - name: http
+          containerPort: 8080
+    asserts:
+      - hasDocuments:
+          count: 2
+      - equal:
+          path: metadata.name
+          value: example-headless
+        documentIndex: 1
+      - equal:
+          path: spec.clusterIP
+          value: None
+        documentIndex: 1
+
+  - it: keeps a headless service name within 63 characters
+    set:
+      deployment.enabled: false
+      statefulset.enabled: true
+      statefulset.headlessService.enabled: true
+      fullnameOverride: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+      ports:
+        - name: http
+          containerPort: 8080
+    asserts:
+      - equal:
+          path: metadata.name
+          value: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-headless
+        documentIndex: 1
+
+  - it: renders the headless service even when there are no ports, so serviceName never dangles
+    set:
+      deployment.enabled: false
+      statefulset.enabled: true
+      statefulset.headlessService.enabled: true
+    asserts:
+      - hasDocuments:
+          count: 1
+      - equal:
+          path: metadata.name
+          value: example-headless
+      - equal:
+          path: spec.clusterIP
+          value: None
+      - notExists:
+          path: spec.ports

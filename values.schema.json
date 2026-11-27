@@ -1,0 +1,369 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "workload chart values",
+  "type": "object",
+  "additionalProperties": false,
+  "definitions": {
+    "stringMap": {
+      "type": "object",
+      "additionalProperties": { "type": "string" }
+    },
+    "anyObject": {
+      "type": "object"
+    },
+    "intOrEmpty": {
+      "oneOf": [
+        { "type": "integer", "minimum": 0 },
+        { "type": "string", "enum": [""] }
+      ]
+    },
+    "positiveIntOrEmpty": {
+      "oneOf": [
+        { "type": "integer", "minimum": 1 },
+        { "type": "string", "enum": [""] }
+      ]
+    },
+    "intOrPercent": {
+      "oneOf": [
+        { "type": "integer", "minimum": 0 },
+        { "type": "string", "pattern": "^([0-9]+%)?$" }
+      ]
+    },
+    "volumeClaim": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "mountPath":        { "type": "string", "description": "Mount the volume at this path." },
+        "accessModes":      { "type": "array", "items": { "type": "string" }, "description": "Defaults to [ReadWriteOnce]." },
+        "storage":          { "type": "string", "description": "Requested size, e.g. 10Gi." },
+        "storageClassName": { "type": "string", "description": "Defaults to cluster.localStorageClassName." }
+      }
+    }
+  },
+  "properties": {
+    "global": {
+      "type": "object",
+      "description": "Values shared with a parent chart. Injected by Helm; not used by the chart itself, but available to tpl strings."
+    },
+    "nameOverride": { "type": "string" },
+    "fullnameOverride": { "type": "string" },
+    "commonLabels": { "$ref": "#/definitions/stringMap" },
+    "commonAnnotations": { "$ref": "#/definitions/stringMap" },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "git": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "source":   { "type": "string" },
+            "revision": { "type": "string" },
+            "ref":      { "type": "string" },
+            "version":  { "type": "string" }
+          }
+        },
+        "deploy": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "actor":     { "type": "string" },
+            "timestamp": { "type": "string" }
+          }
+        }
+      }
+    },
+    "cluster": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "clusterSecretStore":    { "type": "string" },
+        "imagePullSecret":       { "type": "string" },
+        "ingressClassName":      { "type": "string" },
+        "certIssuer":            { "type": "string" },
+        "certIssuerKind":        { "type": "string", "enum": ["ClusterIssuer", "Issuer"] },
+        "localStorageClassName": { "type": "string" }
+      }
+    },
+    "urls": { "$ref": "#/definitions/stringMap" },
+    "image": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "repository": { "type": "string", "minLength": 1 },
+        "tag":        { "type": "string" },
+        "digest":     { "type": "string", "pattern": "^(sha256:[a-f0-9]{64})?$" },
+        "pullPolicy": { "type": "string", "enum": ["Always", "IfNotPresent", "Never"] },
+        "pullSecret": { "type": "string" }
+      }
+    },
+    "replicaCount": { "type": "integer", "minimum": 0 },
+    "env": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name"],
+        "additionalProperties": false,
+        "properties": {
+          "name":      { "type": "string" },
+          "value":     { "type": "string" },
+          "valueFrom": { "type": "object" }
+        }
+      }
+    },
+    "extraConfigMapRefs": { "type": "array", "items": { "type": "string" } },
+    "extraSecretRefs":    { "type": "array", "items": { "type": "string" } },
+    "configMaps": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "enabled":   { "type": "boolean" },
+          "asEnv":     { "type": "boolean", "description": "Add to envFrom." },
+          "mountPath": { "type": "string", "description": "Mount as files at this path." },
+          "data": {
+            "type": "object",
+            "description": "Key/value pairs. Values go through tpl and end up as strings.",
+            "additionalProperties": { "type": ["string", "number", "boolean"] }
+          }
+        }
+      }
+    },
+    "externalSecrets": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "enabled":         { "type": "boolean" },
+          "asEnv":           { "type": "boolean" },
+          "mountPath":       { "type": "string" },
+          "refreshInterval": { "type": "string" },
+          "secretStoreRef": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "name": { "type": "string" },
+              "kind": { "type": "string", "enum": ["SecretStore", "ClusterSecretStore"] }
+            }
+          },
+          "remoteRefs": {
+            "type": "object",
+            "description": "Map of <secret key>: <key in the secret store>.",
+            "additionalProperties": { "type": "string" }
+          }
+        }
+      }
+    },
+    "externalSecretDefaults": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "deletionPolicy":     { "type": "string", "enum": ["", "Retain", "Delete", "Merge"] },
+        "conversionStrategy": { "type": "string", "enum": ["", "Default", "Unicode"] },
+        "decodingStrategy":   { "type": "string", "enum": ["", "None", "Auto", "Base64", "Base64URL"] },
+        "metadataPolicy":     { "type": "string", "enum": ["", "None", "Fetch"] },
+        "nullBytePolicy":     { "type": "string", "enum": ["", "Ignore", "Fail"] }
+      }
+    },
+    "persistentVolumeClaims": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "mountPath":        { "type": "string" },
+          "accessModes":      { "type": "array", "items": { "type": "string" } },
+          "storage":          { "type": "string" },
+          "storageClassName": { "type": "string" },
+          "volumeName":       { "type": "string", "description": "Bind to a specific pre-created PV." },
+          "annotations":      { "$ref": "#/definitions/stringMap" }
+        }
+      }
+    },
+    "ports": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "containerPort"],
+        "additionalProperties": false,
+        "properties": {
+          "name":          { "type": "string", "maxLength": 15 },
+          "containerPort": { "type": "integer", "minimum": 1, "maximum": 65535 },
+          "protocol":      { "type": "string", "enum": ["TCP", "UDP", "SCTP"] }
+        }
+      }
+    },
+    "resources":      { "$ref": "#/definitions/anyObject" },
+    "livenessProbe":  { "$ref": "#/definitions/anyObject" },
+    "readinessProbe": { "$ref": "#/definitions/anyObject" },
+    "startupProbe":   { "$ref": "#/definitions/anyObject" },
+    "lifecycle":      { "$ref": "#/definitions/anyObject" },
+    "command": { "type": "array", "items": { "type": "string" } },
+    "args":    { "type": "array", "items": { "type": "string" } },
+    "deployment": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled":              { "type": "boolean" },
+        "annotations":          { "$ref": "#/definitions/stringMap" },
+        "strategy":             { "$ref": "#/definitions/anyObject" },
+        "revisionHistoryLimit": { "$ref": "#/definitions/intOrEmpty" },
+        "minReadySeconds":      { "$ref": "#/definitions/intOrEmpty" }
+      }
+    },
+    "statefulset": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled":             { "type": "boolean" },
+        "serviceName":         { "type": "string" },
+        "annotations":         { "$ref": "#/definitions/stringMap" },
+        "podManagementPolicy": { "type": "string", "enum": ["", "OrderedReady", "Parallel"] },
+        "updateStrategy":      { "$ref": "#/definitions/anyObject" },
+        "persistentVolumeClaimRetentionPolicy": { "$ref": "#/definitions/anyObject" },
+        "headlessService": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": { "enabled": { "type": "boolean" } }
+        },
+        "volumeClaimTemplates": {
+          "type": "object",
+          "additionalProperties": { "$ref": "#/definitions/volumeClaim" }
+        }
+      }
+    },
+    "job": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled":                 { "type": "boolean" },
+        "backoffLimit":            { "$ref": "#/definitions/intOrEmpty" },
+        "ttlSecondsAfterFinished": { "$ref": "#/definitions/intOrEmpty" },
+        "activeDeadlineSeconds":   { "$ref": "#/definitions/positiveIntOrEmpty" },
+        "parallelism":             { "$ref": "#/definitions/positiveIntOrEmpty" },
+        "completions":             { "$ref": "#/definitions/positiveIntOrEmpty" },
+        "restartPolicy":           { "type": "string", "enum": ["OnFailure", "Never"] },
+        "annotations":             { "$ref": "#/definitions/stringMap" }
+      }
+    },
+    "cronjob": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled":                    { "type": "boolean" },
+        "schedule":                   { "type": "string" },
+        "timeZone":                   { "type": "string" },
+        "concurrencyPolicy":          { "type": "string", "enum": ["Allow", "Forbid", "Replace"] },
+        "suspend":                    { "type": "boolean" },
+        "startingDeadlineSeconds":    { "$ref": "#/definitions/intOrEmpty" },
+        "successfulJobsHistoryLimit": { "$ref": "#/definitions/intOrEmpty" },
+        "failedJobsHistoryLimit":     { "$ref": "#/definitions/intOrEmpty" },
+        "backoffLimit":               { "$ref": "#/definitions/intOrEmpty" },
+        "activeDeadlineSeconds":      { "$ref": "#/definitions/positiveIntOrEmpty" },
+        "ttlSecondsAfterFinished":    { "$ref": "#/definitions/intOrEmpty" },
+        "restartPolicy":              { "type": "string", "enum": ["OnFailure", "Never"] },
+        "annotations":                { "$ref": "#/definitions/stringMap" }
+      }
+    },
+    "podAnnotations": { "$ref": "#/definitions/stringMap" },
+    "podLabels":      { "$ref": "#/definitions/stringMap" },
+    "serviceAccount": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "create":      { "type": "boolean" },
+        "name":        { "type": "string" },
+        "annotations": { "$ref": "#/definitions/stringMap" },
+        "automountServiceAccountToken": {
+          "oneOf": [
+            { "type": "boolean" },
+            { "type": "string", "enum": [""] }
+          ]
+        }
+      }
+    },
+    "initContainers":            { "type": "array", "items": { "type": "object" } },
+    "extraContainers":           { "type": "array", "items": { "type": "object" } },
+    "nodeSelector":              { "$ref": "#/definitions/stringMap" },
+    "affinity":                  { "$ref": "#/definitions/anyObject" },
+    "tolerations":               { "type": "array", "items": { "type": "object" } },
+    "topologySpreadConstraints": { "type": "array", "items": { "type": "object" } },
+    "priorityClassName":         { "type": "string" },
+    "terminationGracePeriodSeconds": { "$ref": "#/definitions/intOrEmpty" },
+    "extraVolumes":      { "type": "array", "items": { "type": "object" } },
+    "extraVolumeMounts": { "type": "array", "items": { "type": "object" } },
+    "service": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "type":    { "type": "string", "enum": ["ClusterIP", "NodePort", "LoadBalancer"] },
+        "ports":   { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "ingress": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled":   { "type": "boolean" },
+        "className": { "type": "string" },
+        "host":      { "type": "string" },
+        "port":      { "type": "string" },
+        "path":      { "type": "string" },
+        "pathType":  { "type": "string", "enum": ["Prefix", "Exact", "ImplementationSpecific"] },
+        "tls": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled":    { "type": "boolean" },
+            "secretName": { "type": "string" },
+            "issuer":     { "type": "string" },
+            "issuerKind": { "type": "string", "enum": ["ClusterIssuer", "Issuer", ""] }
+          }
+        },
+        "annotations": { "$ref": "#/definitions/stringMap" }
+      }
+    },
+    "autoscaling": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled":     { "type": "boolean" },
+        "minReplicas": { "type": "integer", "minimum": 1 },
+        "maxReplicas": { "type": "integer", "minimum": 1 },
+        "targetCPUUtilizationPercentage":    { "$ref": "#/definitions/positiveIntOrEmpty" },
+        "targetMemoryUtilizationPercentage": { "$ref": "#/definitions/positiveIntOrEmpty" },
+        "behavior": { "$ref": "#/definitions/anyObject" }
+      }
+    },
+    "podDisruptionBudget": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled":        { "type": "boolean" },
+        "minAvailable":   { "$ref": "#/definitions/intOrPercent" },
+        "maxUnavailable": { "$ref": "#/definitions/intOrPercent" }
+      }
+    },
+    "networkPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled":     { "type": "boolean" },
+        "policyTypes": { "type": "array", "items": { "type": "string", "enum": ["Ingress", "Egress"] } },
+        "ingress":     { "type": "array", "items": { "type": "object" } },
+        "egress":      { "type": "array", "items": { "type": "object" } }
+      }
+    },
+    "podSecurityContext": {
+      "type": "object",
+      "properties": { "enabled": { "type": "boolean" } }
+    },
+    "containerSecurityContext": {
+      "type": "object",
+      "properties": { "enabled": { "type": "boolean" } }
+    }
+  }
+}
