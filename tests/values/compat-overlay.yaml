@@ -1,0 +1,10 @@
+image:
+  tag: "2.0.0"
+
+configMaps:
+  app:
+    data:
+      LOG_LEVEL: debug
+      API_URL: https://overlay.example.test
+  extra:
+    enabled: false

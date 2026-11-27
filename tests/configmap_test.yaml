@@ -1,0 +1,109 @@
+suite: configmap
+templates:
+  - configmap.yaml
+release:
+  name: example
+tests:
+  - it: renders nothing without ConfigMaps
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: names each ConfigMap after the release and its key
+    set:
+      configMaps:
+        app:
+          enabled: true
+          data:
+            A: b
+        settings:
+          enabled: true
+          data:
+            C: d
+    asserts:
+      - hasDocuments:
+          count: 2
+      - isKind:
+          of: ConfigMap
+      - equal:
+          path: metadata.name
+          value: example-app
+        documentIndex: 0
+      - equal:
+          path: metadata.name
+          value: example-settings
+        documentIndex: 1
+      - equal:
+          path: data
+          value:
+            A: b
+        documentIndex: 0
+
+  - it: skips disabled ConfigMaps
+    set:
+      configMaps:
+        app:
+          enabled: false
+          data:
+            A: b
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: renders values through tpl and stringifies the rest
+    set:
+      urls.api: https://api.example.test
+      configMaps:
+        app:
+          enabled: true
+          data:
+            API_URL: '{{ index .Values.urls "api" }}'
+            API_AUDIENCE: '{{ index .Values.urls "api" }}/v1'
+            NAME: '{{ .Release.Name }}'
+            PORT: 8080
+            DEBUG: true
+    asserts:
+      - equal:
+          path: data
+          value:
+            API_URL: https://api.example.test
+            API_AUDIENCE: https://api.example.test/v1
+            NAME: example
+            PORT: "8080"
+            DEBUG: "true"
+
+  - it: reaches the image and provenance values through tpl
+    set:
+      image.tag: "1.2.3"
+      provenance.git.revision: abc123
+      configMaps:
+        version:
+          enabled: true
+          data:
+            image-tag: '{{ .Values.image.tag }}'
+            git-revision: '{{ .Values.provenance.git.revision }}'
+    asserts:
+      - equal:
+          path: data
+          value:
+            image-tag: "1.2.3"
+            git-revision: abc123
+
+  - it: carries the common labels and annotations
+    set:
+      commonLabels:
+        team: example
+      commonAnnotations:
+        example.test/owner: platform
+      configMaps:
+        app:
+          enabled: true
+          data:
+            A: b
+    asserts:
+      - equal:
+          path: metadata.labels.team
+          value: example
+      - equal:
+          path: metadata.annotations["example.test/owner"]
+          value: platform

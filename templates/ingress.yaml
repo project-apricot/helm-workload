@@ -1,0 +1,49 @@
+{{- if .Values.ingress.enabled }}
+{{- $fullname := include "workload.fullname" . }}
+{{- $host := tpl .Values.ingress.host . }}
+{{- $issuer := .Values.ingress.tls.issuer | default .Values.cluster.certIssuer }}
+{{- $issuerKind := .Values.ingress.tls.issuerKind | default .Values.cluster.certIssuerKind | default "ClusterIssuer" }}
+{{- $tlsSecretName := .Values.ingress.tls.secretName | default (printf "%s-tls" $fullname) }}
+{{- $className := .Values.ingress.className | default .Values.cluster.ingressClassName }}
+{{- $generated := dict }}
+{{- if and .Values.ingress.tls.enabled $issuer }}
+{{- if eq $issuerKind "ClusterIssuer" }}
+{{- $_ := set $generated "cert-manager.io/cluster-issuer" $issuer }}
+{{- else }}
+{{- $_ := set $generated "cert-manager.io/issuer" $issuer }}
+{{- end }}
+{{- end }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ $fullname }}
+  labels:
+    {{- include "workload.labels" . | nindent 4 }}
+  {{- with include "workload.annotations" (dict "ctx" . "extra" .Values.ingress.annotations "defaults" $generated) }}
+  annotations:
+    {{- . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- with $className }}
+  ingressClassName: {{ . }}
+  {{- end }}
+  {{- if .Values.ingress.tls.enabled }}
+  tls:
+    - secretName: {{ $tlsSecretName }}
+      {{- if $host }}
+      hosts:
+        - {{ $host | quote }}
+      {{- end }}
+  {{- end }}
+  rules:
+    - {{ if $host }}host: {{ $host | quote }}
+      {{ end }}http:
+        paths:
+          - path: {{ .Values.ingress.path | default "/" | quote }}
+            pathType: {{ .Values.ingress.pathType | default "Prefix" }}
+            backend:
+              service:
+                name: {{ $fullname }}
+                port:
+                  name: {{ .Values.ingress.port | default "http" }}
+{{- end }}

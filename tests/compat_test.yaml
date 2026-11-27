@@ -1,0 +1,352 @@
+# Pins the behaviour that deployments built on this chart depend on: object names, selector labels,
+# the shape of generated objects, and how values layer. A change that breaks one of these breaks
+# every consumer on its next sync, so the tests here are deliberately concrete.
+suite: compatibility
+templates:
+  - deployment.yaml
+  - statefulset.yaml
+  - service.yaml
+  - configmap.yaml
+  - externalsecret.yaml
+  - persistentvolumeclaim.yaml
+release:
+  name: example
+tests:
+  - it: names the workload and the Service after the release
+    set:
+      ports:
+        - name: http
+          containerPort: 8080
+    asserts:
+      - equal:
+          path: metadata.name
+          value: example
+        template: deployment.yaml
+      - equal:
+          path: metadata.name
+          value: example
+        template: service.yaml
+
+  - it: prefixes the release name with nothing, even for a long chart name
+    release:
+      name: a-release-name
+    asserts:
+      - equal:
+          path: metadata.name
+          value: a-release-name
+        template: deployment.yaml
+
+  - it: lets fullnameOverride replace the name of every object
+    set:
+      fullnameOverride: custom
+      ports:
+        - name: http
+          containerPort: 8080
+      configMaps:
+        app:
+          enabled: true
+          asEnv: true
+          data:
+            A: b
+    asserts:
+      - equal:
+          path: metadata.name
+          value: custom
+        template: deployment.yaml
+      - equal:
+          path: metadata.name
+          value: custom
+        template: service.yaml
+      - equal:
+          path: metadata.name
+          value: custom-app
+        template: configmap.yaml
+      - equal:
+          path: spec.template.spec.containers[0].envFrom[0].configMapRef.name
+          value: custom-app
+        template: deployment.yaml
+
+  - it: joins release and nameOverride, and keeps the label on the override
+    set:
+      nameOverride: web
+    asserts:
+      - equal:
+          path: metadata.name
+          value: example-web
+        template: deployment.yaml
+      - equal:
+          path: spec.selector.matchLabels["app.kubernetes.io/name"]
+          value: web
+        template: deployment.yaml
+      - equal:
+          path: spec.template.spec.containers[0].name
+          value: web
+        template: deployment.yaml
+
+  - it: truncates a long name to 63 characters
+    set:
+      fullnameOverride: this-name-is-really-quite-long-and-then-some-more-and-more-andmore-still
+    asserts:
+      - equal:
+          path: metadata.name
+          value: this-name-is-really-quite-long-and-then-some-more-and-more-andm
+        template: deployment.yaml
+
+  - it: drops a dash left at the end by truncation
+    set:
+      fullnameOverride: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-bcd
+    asserts:
+      - equal:
+          path: metadata.name
+          value: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+        template: deployment.yaml
+
+  - it: keeps the selector labels immutable, whatever else changes
+    set:
+      commonLabels:
+        team: example
+      podLabels:
+        tier: backend
+    asserts:
+      - equal:
+          path: spec.selector.matchLabels
+          value:
+            app.kubernetes.io/name: example
+            app.kubernetes.io/instance: example
+        template: deployment.yaml
+
+  - it: keeps the same selector on a StatefulSet
+    set:
+      deployment.enabled: false
+      statefulset.enabled: true
+    asserts:
+      - equal:
+          path: spec.selector.matchLabels
+          value:
+            app.kubernetes.io/name: example
+            app.kubernetes.io/instance: example
+        template: statefulset.yaml
+
+  - it: labels every object the same way
+    set:
+      ports:
+        - name: http
+          containerPort: 8080
+      configMaps:
+        app:
+          enabled: true
+          data:
+            A: b
+      persistentVolumeClaims:
+        data:
+          storage: 1Gi
+    asserts:
+      - equal:
+          path: metadata.labels
+          value:
+            helm.sh/chart: workload-0.0.0
+            app.kubernetes.io/name: example
+            app.kubernetes.io/instance: example
+            app.kubernetes.io/managed-by: Helm
+        template: deployment.yaml
+      - equal:
+          path: metadata.labels
+          value:
+            helm.sh/chart: workload-0.0.0
+            app.kubernetes.io/name: example
+            app.kubernetes.io/instance: example
+            app.kubernetes.io/managed-by: Helm
+        template: service.yaml
+      - equal:
+          path: metadata.labels
+          value:
+            helm.sh/chart: workload-0.0.0
+            app.kubernetes.io/name: example
+            app.kubernetes.io/instance: example
+            app.kubernetes.io/managed-by: Helm
+        template: configmap.yaml
+      - equal:
+          path: metadata.labels
+          value:
+            helm.sh/chart: workload-0.0.0
+            app.kubernetes.io/name: example
+            app.kubernetes.io/instance: example
+            app.kubernetes.io/managed-by: Helm
+        template: persistentvolumeclaim.yaml
+
+  - it: keeps the placeholder image defaults
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: "not-set:not-set"
+        template: deployment.yaml
+
+  - it: names generated Secrets and PVCs <fullname>-<key>
+    set:
+      cluster.clusterSecretStore: store
+      externalSecrets:
+        creds:
+          enabled: true
+          asEnv: true
+          remoteRefs:
+            A: B
+      persistentVolumeClaims:
+        data:
+          mountPath: /data
+          storage: 1Gi
+    asserts:
+      - equal:
+          path: metadata.name
+          value: example-creds
+        template: externalsecret.yaml
+      - equal:
+          path: spec.target.name
+          value: example-creds
+        template: externalsecret.yaml
+      - equal:
+          path: spec.template.spec.containers[0].envFrom[0].secretRef.name
+          value: example-creds
+        template: deployment.yaml
+      - equal:
+          path: metadata.name
+          value: example-data
+        template: persistentvolumeclaim.yaml
+      - equal:
+          path: spec.template.spec.volumes[0].persistentVolumeClaim.claimName
+          value: example-data
+        template: deployment.yaml
+
+  - it: generates ExternalSecrets in the shape GitOps tools expect, defaulted fields included
+    set:
+      cluster.clusterSecretStore: store
+      externalSecrets:
+        creds:
+          enabled: true
+          remoteRefs:
+            A: B
+    asserts:
+      - equal:
+          path: apiVersion
+          value: external-secrets.io/v1
+        template: externalsecret.yaml
+      - equal:
+          path: spec.target.creationPolicy
+          value: Owner
+        template: externalsecret.yaml
+      - equal:
+          path: spec.refreshInterval
+          value: 1h
+        template: externalsecret.yaml
+      - equal:
+          path: spec.secretStoreRef.kind
+          value: ClusterSecretStore
+        template: externalsecret.yaml
+      - equal:
+          path: spec.target.deletionPolicy
+          value: Retain
+        template: externalsecret.yaml
+      - equal:
+          path: spec.data[0]
+          value:
+            secretKey: A
+            remoteRef:
+              key: B
+              conversionStrategy: Default
+              decodingStrategy: "None"
+              metadataPolicy: "None"
+        template: externalsecret.yaml
+
+  - it: keeps PVCs on uninstall
+    set:
+      persistentVolumeClaims:
+        data:
+          storage: 1Gi
+    asserts:
+      - equal:
+          path: metadata.annotations["helm.sh/resource-policy"]
+          value: keep
+        template: persistentvolumeclaim.yaml
+
+  - it: layers values files by deep-merging maps, so an overlay can change one key
+    values:
+      - values/compat-base.yaml
+      - values/compat-overlay.yaml
+    asserts:
+      - equal:
+          path: data
+          value:
+            LOG_LEVEL: debug
+            API_URL: https://overlay.example.test
+            FIXED: base
+        template: configmap.yaml
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: registry.example.test/app:2.0.0
+        template: deployment.yaml
+
+  - it: lets a values file disable one entry of a map without touching the others
+    values:
+      - values/compat-base.yaml
+    set:
+      configMaps.extra.enabled: false
+    asserts:
+      - hasDocuments:
+          count: 1
+        template: configmap.yaml
+
+  - it: resolves tpl strings against the chart values, as a subchart would see them
+    set:
+      urls:
+        api: https://api.example.test
+      configMaps:
+        app:
+          enabled: true
+          data:
+            API: '{{ index .Values.urls "api" }}'
+            OTHER: '{{ index .Values.urls "api" }}/other'
+    asserts:
+      - equal:
+          path: data
+          value:
+            API: https://api.example.test
+            OTHER: https://api.example.test/other
+        template: configmap.yaml
+
+  - it: renders an empty string for a url key that is not defined
+    set:
+      configMaps:
+        app:
+          enabled: true
+          data:
+            API: '{{ index .Values.urls "api" }}'
+    asserts:
+      - equal:
+          path: data.API
+          value: ""
+        template: configmap.yaml
+
+  - it: keeps the pod-level checksum annotation names
+    set:
+      configMaps:
+        app:
+          enabled: true
+          data:
+            A: b
+    asserts:
+      - exists:
+          path: spec.template.metadata.annotations["checksum/configmaps"]
+        template: deployment.yaml
+
+  - it: renders a Service for exactly the ports it is told to expose
+    set:
+      ports:
+        - name: http
+          containerPort: 8080
+        - name: grpc
+          containerPort: 8081
+      service.ports: [http]
+    asserts:
+      - lengthEqual:
+          path: spec.ports
+          count: 1
+        template: service.yaml

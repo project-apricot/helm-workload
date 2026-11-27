@@ -1,0 +1,2 @@
+{{- /* Renders nothing. Exists so the cross-field checks run on every render. */ -}}
+{{- include "workload.validate" . -}}

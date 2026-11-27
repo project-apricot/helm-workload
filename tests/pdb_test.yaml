@@ -1,0 +1,45 @@
+suite: pdb
+templates:
+  - pdb.yaml
+release:
+  name: example
+tests:
+  - it: renders nothing by default
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: renders a PodDisruptionBudget with minAvailable
+    set:
+      podDisruptionBudget.enabled: true
+      podDisruptionBudget.minAvailable: 1
+    asserts:
+      - isKind:
+          of: PodDisruptionBudget
+      - isAPIVersion:
+          of: policy/v1
+      - equal:
+          path: spec
+          value:
+            minAvailable: 1
+            selector:
+              matchLabels:
+                app.kubernetes.io/name: example
+                app.kubernetes.io/instance: example
+
+  - it: accepts a percentage and zero
+    set:
+      podDisruptionBudget.enabled: true
+      podDisruptionBudget.maxUnavailable: "25%"
+    asserts:
+      - equal:
+          path: spec.maxUnavailable
+          value: 25%
+  - it: honours zero
+    set:
+      podDisruptionBudget.enabled: true
+      podDisruptionBudget.maxUnavailable: 0
+    asserts:
+      - equal:
+          path: spec.maxUnavailable
+          value: 0

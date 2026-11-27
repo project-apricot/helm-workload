@@ -1,0 +1,30 @@
+{{- if .Values.job.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "workload.fullname" . }}
+  labels:
+    {{- include "workload.labels" . | nindent 4 }}
+  {{- with include "workload.annotations" (dict "ctx" . "extra" .Values.job.annotations "provenance" true) }}
+  annotations:
+    {{- . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- if include "workload.isSet" .Values.job.backoffLimit }}
+  backoffLimit: {{ .Values.job.backoffLimit | int64 }}
+  {{- end }}
+  {{- if include "workload.isSet" .Values.job.ttlSecondsAfterFinished }}
+  ttlSecondsAfterFinished: {{ .Values.job.ttlSecondsAfterFinished | int64 }}
+  {{- end }}
+  {{- if include "workload.isSet" .Values.job.activeDeadlineSeconds }}
+  activeDeadlineSeconds: {{ .Values.job.activeDeadlineSeconds | int64 }}
+  {{- end }}
+  {{- if include "workload.isSet" .Values.job.parallelism }}
+  parallelism: {{ .Values.job.parallelism | int64 }}
+  {{- end }}
+  {{- if include "workload.isSet" .Values.job.completions }}
+  completions: {{ .Values.job.completions | int64 }}
+  {{- end }}
+  template:
+    {{- include "workload.podTemplate" (dict "ctx" . "restartPolicy" (.Values.job.restartPolicy | default "OnFailure")) | nindent 4 }}
+{{- end }}

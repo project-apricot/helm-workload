@@ -1,0 +1,25 @@
+apiVersion: v2
+name: workload
+description: One Helm chart for Deployments, StatefulSets, Jobs and CronJobs, driven entirely by values.
+type: application
+# Placeholder. The release workflow stamps the real version from the git tag at package time.
+version: 0.0.0
+kubeVersion: ">=1.27.0-0"
+home: https://projectapricot.dev/docs/helm-workload
+icon: https://projectapricot.dev/icon.svg
+sources:
+  - https://github.com/project-apricot/helm-workload
+keywords:
+  - workload
+  - deployment
+  - statefulset
+  - job
+  - cronjob
+  - microservice
+  - gitops
+maintainers:
+  - name: Project Apricot
+    url: https://github.com/project-apricot
+annotations:
+  artifacthub.io/license: Apache-2.0
+  artifacthub.io/category: integration-delivery

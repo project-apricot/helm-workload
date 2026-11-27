@@ -1,0 +1,26 @@
+{{- range $name, $pvc := .Values.persistentVolumeClaims }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "workload.fullname" $ }}-{{ $name }}
+  labels:
+    {{- include "workload.labels" $ | nindent 4 }}
+  {{- with include "workload.annotations" (dict "ctx" $ "extra" $pvc.annotations "defaults" (dict "helm.sh/resource-policy" "keep")) }}
+  annotations:
+    {{- . | nindent 4 }}
+  {{- end }}
+spec:
+  accessModes:
+    {{- toYaml ($pvc.accessModes | default (list "ReadWriteOnce")) | nindent 4 }}
+  {{- $sc := coalesce $pvc.storageClassName $.Values.cluster.localStorageClassName }}
+  {{- if $sc }}
+  storageClassName: {{ $sc }}
+  {{- end }}
+  {{- with $pvc.volumeName }}
+  volumeName: {{ . }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ required (printf "persistentVolumeClaims.%s.storage is required" $name) $pvc.storage }}
+{{- end }}

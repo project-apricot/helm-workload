@@ -1,0 +1,13 @@
+# Local helm package output
+helm-out/
+*.tgz
+
+# Helm dependency artifacts
+charts/
+Chart.lock
+
+# Editor and OS files
+.idea/
+.vscode/
+.DS_Store
+*.swp

@@ -1,0 +1,53 @@
+# A stateful service: StatefulSet with a headless Service and a per-replica volume.
+image:
+  repository: nginxinc/nginx-unprivileged
+  tag: "1.27-alpine"
+
+replicaCount: 2
+
+deployment:
+  enabled: false
+
+statefulset:
+  enabled: true
+  podManagementPolicy: Parallel
+  headlessService:
+    enabled: true
+  volumeClaimTemplates:
+    data:
+      mountPath: /data
+      accessModes: [ReadWriteOnce]
+      storage: 64Mi
+
+ports:
+  - name: http
+    containerPort: 8080
+
+service:
+  enabled: true
+
+readinessProbe:
+  httpGet:
+    path: /
+    port: http
+  initialDelaySeconds: 1
+  periodSeconds: 2
+
+podSecurityContext:
+  runAsUser: 101
+  runAsGroup: 101
+  fsGroup: 101
+
+extraVolumes:
+  - name: tmp
+    emptyDir:
+      sizeLimit: 16Mi
+  - name: cache
+    emptyDir:
+      sizeLimit: 16Mi
+
+extraVolumeMounts:
+  - name: tmp
+    mountPath: /tmp
+  - name: cache
+    mountPath: /var/cache/nginx

@@ -1,0 +1,165 @@
+suite: statefulset
+templates:
+  - statefulset.yaml
+release:
+  name: example
+set:
+  deployment.enabled: false
+  statefulset.enabled: true
+tests:
+  - it: renders a StatefulSet
+    asserts:
+      - isKind:
+          of: StatefulSet
+      - equal:
+          path: metadata.name
+          value: example
+      - equal:
+          path: spec.replicas
+          value: 1
+      - equal:
+          path: spec.selector.matchLabels
+          value:
+            app.kubernetes.io/name: example
+            app.kubernetes.io/instance: example
+
+  - it: renders nothing when disabled
+    set:
+      statefulset.enabled: false
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: uses the fullname as the governing service by default
+    asserts:
+      - equal:
+          path: spec.serviceName
+          value: example
+
+  - it: uses the headless service when there is one
+    set:
+      statefulset.headlessService.enabled: true
+    asserts:
+      - equal:
+          path: spec.serviceName
+          value: example-headless
+
+  - it: lets serviceName win
+    set:
+      statefulset.headlessService.enabled: true
+      statefulset.serviceName: custom
+    asserts:
+      - equal:
+          path: spec.serviceName
+          value: custom
+
+  - it: renders policies
+    set:
+      statefulset.podManagementPolicy: Parallel
+      statefulset.updateStrategy:
+        type: RollingUpdate
+      statefulset.persistentVolumeClaimRetentionPolicy:
+        whenDeleted: Delete
+    asserts:
+      - equal:
+          path: spec.podManagementPolicy
+          value: Parallel
+      - equal:
+          path: spec.updateStrategy.type
+          value: RollingUpdate
+      - equal:
+          path: spec.persistentVolumeClaimRetentionPolicy.whenDeleted
+          value: Delete
+
+  - it: renders volumeClaimTemplates and mounts them
+    set:
+      cluster.localStorageClassName: local
+      statefulset.volumeClaimTemplates:
+        data:
+          mountPath: /data
+          storage: 1Gi
+        logs:
+          storage: 2Gi
+          storageClassName: fast
+          accessModes: [ReadWriteMany]
+    asserts:
+      - equal:
+          path: spec.volumeClaimTemplates[0].metadata.name
+          value: data
+      - equal:
+          path: spec.volumeClaimTemplates[0].spec
+          value:
+            accessModes: [ReadWriteOnce]
+            storageClassName: local
+            resources:
+              requests:
+                storage: 1Gi
+      - equal:
+          path: spec.volumeClaimTemplates[1].spec.storageClassName
+          value: fast
+      - equal:
+          path: spec.volumeClaimTemplates[1].spec.accessModes
+          value: [ReadWriteMany]
+      - equal:
+          path: spec.template.spec.containers[0].volumeMounts
+          value:
+            - name: data
+              mountPath: /data
+      - notExists:
+          path: spec.template.spec.volumes
+
+  - it: leaves the storage class to the cluster by default
+    set:
+      statefulset.volumeClaimTemplates:
+        data:
+          storage: 1Gi
+    asserts:
+      - notExists:
+          path: spec.volumeClaimTemplates[0].spec.storageClassName
+
+  - it: requires a size for each volumeClaimTemplate
+    set:
+      statefulset.volumeClaimTemplates:
+        data:
+          mountPath: /data
+    asserts:
+      - failedTemplate:
+          errorPattern: "statefulset.volumeClaimTemplates.data.storage is required"
+
+  - it: omits replicas when autoscaling
+    set:
+      autoscaling.enabled: true
+    asserts:
+      - notExists:
+          path: spec.replicas
+
+  - it: renders provenance on the StatefulSet
+    set:
+      provenance.git.revision: abc123
+      statefulset.annotations:
+        example.test/x: value
+    asserts:
+      - equal:
+          path: metadata.annotations
+          value:
+            example.test/x: value
+            org.opencontainers.image.revision: abc123
+
+  # volumeClaimTemplates are immutable on a live StatefulSet, so nothing in them may change with the
+  # chart version or with commonLabels.
+  - it: gives volumeClaimTemplates only the selector labels, whatever else changes
+    chart:
+      version: 9.9.9
+    set:
+      commonLabels:
+        team: example
+      statefulset.volumeClaimTemplates:
+        data:
+          mountPath: /data
+          storage: 1Gi
+    asserts:
+      - equal:
+          path: spec.volumeClaimTemplates[0].metadata.labels
+          value:
+            app.kubernetes.io/name: example
+            app.kubernetes.io/instance: example

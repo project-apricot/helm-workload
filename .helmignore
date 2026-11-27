@@ -1,0 +1,26 @@
+# Patterns to ignore when packaging the chart.
+
+# Tests, scenarios and docs are for the repository, not for the packaged chart.
+tests/
+ci/
+docs/
+.github/
+Makefile
+.editorconfig
+
+# VCS
+.git/
+.gitignore
+
+# Editor and OS files
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.bak
+*.tmp
+*.orig
+
+# Local package output
+helm-out/
+*.tgz
